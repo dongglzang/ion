@@ -65,6 +65,10 @@ const DEFAULT_COHESION: CohesionSettings = {
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 3.0;
 
+const MIN_NODES = 20;
+const computeMaxNodes = (zoom: number): number =>
+  Math.round(MIN_NODES + (100 - zoom) / 90 * (100 - MIN_NODES));
+
 interface WorldPageProps {
   posts: Post[];
   connections: string[];
@@ -153,6 +157,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
   const transformRef = useRef(transform);
   const viewModeRef = useRef(viewMode);
   const cohesionRef = useRef(cohesion);
+  const zoomLevelRef = useRef(zoomLevel);
+  const lastNodeCountRef = useRef(computeMaxNodes(zoomLevel));
+  const [graphSeed, setGraphSeed] = useState(0);
   const renderModeRef = useRef<RenderMode>('active');
   const moonAnimStartRef = useRef<number>(0);
   const moonAnimProgressRef = useRef<number>(0);
@@ -165,6 +172,18 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     initialPinchDistance: null,
     initialScale: 1,
   });
+
+  const renderRef = useRef<(() => void) | null>(null);
+
+  // Paint-only: schedule a single rAF to render the current state.
+  // Does NOT restart the d3 simulation — used by camera ops (pan/zoom).
+  const requestRender = useCallback(() => {
+    if (animationFrameRef.current) return;
+    animationFrameRef.current = requestAnimationFrame(() => {
+      animationFrameRef.current = 0;
+      renderRef.current?.();
+    });
+  }, []);
 
   const scaleToZoom = useCallback((scale: number) => Math.round(10 + (scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE) * 90), []);
   // WorldPage는 자체 zoom 관리, ZoomSlider에 동기화만
@@ -182,6 +201,10 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
   }, [cohesion]);
 
   useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  useEffect(() => {
     const myNode = nodesRef.current.find(n => n.isCurrentUser);
     if (!myNode || myNode.x === undefined || myNode.y === undefined) return;
     if (dimensions.width === 0 || dimensions.height === 0) return;
@@ -192,12 +215,12 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     const newX = screenCenterX - myNode.x * currentScale;
     const newY = screenCenterY - myNode.y * currentScale;
 
-    setTransform(prev => {
-      const scaleDiff = Math.abs(prev.scale - currentScale);
-      if (scaleDiff < 0.001) return prev;
-      return { x: newX, y: newY, scale: currentScale };
-    });
-  }, [zoomLevel, dimensions]);
+    if (Math.abs(transformRef.current.scale - currentScale) < 0.001) return;
+    const next = { x: newX, y: newY, scale: currentScale };
+    transformRef.current = next;
+    setTransform(next);
+    requestRender();
+  }, [zoomLevel, dimensions, requestRender]);
 
   const buildGraph = useCallback(() => {
     const authorSet = new Set<string>();
@@ -205,8 +228,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     const allAuthors = Array.from(authorSet);
     const myConnections = new Set(connections);
 
-    const MIN_NODES = 20;
-    const MAX_NODES = Math.round(MIN_NODES + (100 - zoomLevel) / 90 * (100 - MIN_NODES));
+    const MAX_NODES = computeMaxNodes(zoomLevelRef.current);
 
     // 1. Divide authors: current user, connected, unconnected
     const connected = allAuthors.filter(a => myConnections.has(a));
@@ -256,7 +278,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     }
 
     return { nodes: graphNodes, edges: graphEdges };
-  }, [posts, connections, currentUserId, dimensions, zoomLevel]);
+  }, [posts, connections, currentUserId, dimensions]);
 
   const renderLoopRef = useRef<(() => void) | null>(null);
 
@@ -281,6 +303,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     loop();
   }, []);
 
+
   useEffect(() => {
     const handleResize = () => {
       setDimensions({ width: window.innerWidth, height: window.innerHeight });
@@ -289,6 +312,18 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Debounced graph rebuild: only when zoom changes the visible node count.
+  // Bumping graphSeed re-runs the main effect, but NOT on every zoom tick.
+  useEffect(() => {
+    const nodeCount = computeMaxNodes(zoomLevel);
+    if (nodeCount === lastNodeCountRef.current) return;
+    const timer = window.setTimeout(() => {
+      lastNodeCountRef.current = nodeCount;
+      setGraphSeed(s => s + 1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [zoomLevel]);
 
   useEffect(() => {
     if (dimensions.width === 0 || dimensions.height === 0) return;
@@ -299,8 +334,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
 
     simulationRef.current?.stop();
     renderModeRef.current = 'active';
-    moonAnimStartRef.current = Date.now();
-    moonAnimProgressRef.current = 0;
+    if (moonAnimStartRef.current === 0) {
+      moonAnimStartRef.current = Date.now();
+    }
 
     const simulation = forceSimulation<GraphNode>(nodes)
       .force('link', forceLink<GraphNode, Edge>(edges)
@@ -423,9 +459,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         }
       }
 
-      ctx.restore();
-
-      // Draw moon glow at screen center (NO transform - fixed position)
+      // Draw moon glow and planet inside transform — panned/zoomed with the graph
       if (moonRadius > 0 && t < 1) {
         const fixedMoonRadius = moonBaseRadius;
         const glowAlpha = (1 - t) * 0.4;
@@ -438,9 +472,11 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         ctx.fill();
       }
 
-      // Draw moon at screen center (NO transform - fixed position and size)
       drawPlanet(ctx, screenCenterX, screenCenterY + moonYOffset, moonRadius, currentUserPlanet);
+
+      ctx.restore();
     };
+    renderRef.current = render;
 
     simulation.on('tick', () => {
       render();
@@ -472,8 +508,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = 0;
       }
+      renderRef.current = null;
     };
-  }, [buildGraph, dimensions]);
+  }, [buildGraph, dimensions, graphSeed]);
 
   useEffect(() => {
     if (!simulationRef.current || dimensions.width === 0) return;
@@ -512,9 +549,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     if (myNode && myNode.x !== undefined && myNode.y !== undefined) {
       setTransform({ x: 0, y: 0, scale: 1 });
       setViewMode('centered');
-      startRenderLoop();
+      requestRender();
     }
-  }, [startRenderLoop]);
+  }, [requestRender]);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -532,8 +569,8 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
 
     setTransform({ x: newX, y: newY, scale: newScale });
     setZoomLevel(newZoom);
-    startRenderLoop();
-  }, [startRenderLoop, setZoomLevel, scaleToZoom, dimensions]);
+    requestRender();
+  }, [requestRender, setZoomLevel, scaleToZoom, dimensions]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDraggingRef.current = true;
@@ -550,8 +587,8 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
       x: prev.x + dx,
       y: prev.y + dy,
     }));
-    startRenderLoop();
-  }, [startRenderLoop]);
+    requestRender();
+  }, [requestRender]);
 
   const handleMouseUp = useCallback(() => {
     isDraggingRef.current = false;
@@ -589,7 +626,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         x: prev.x + dx,
         y: prev.y + dy,
       }));
-      startRenderLoop();
+      requestRender();
     } else if (e.touches.length === 2 && touchStateRef.current.initialPinchDistance) {
       const currentDistance = getTouchDistance(e.touches);
       const scale = currentDistance / touchStateRef.current.initialPinchDistance;
@@ -605,9 +642,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
       const newY = currentTransform.y - pinchCenterY * (newScale - currentTransform.scale);
       setTransform({ x: newX, y: newY, scale: newScale });
       setZoomLevel(scaleToZoom(newScale));
-      startRenderLoop();
+      requestRender();
     }
-  }, [startRenderLoop, setZoomLevel, scaleToZoom]);
+  }, [requestRender, setZoomLevel, scaleToZoom]);
 
   const handleTouchEnd = useCallback(() => {
     isDraggingRef.current = false;
