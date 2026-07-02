@@ -176,7 +176,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
   const renderRef = useRef<(() => void) | null>(null);
 
   // Paint-only: schedule a single rAF to render the current state.
-  // Does NOT restart the d3 simulation — used by camera ops (pan/zoom).
+  // Does NOT restart the d3 simulation ??used by camera ops (pan/zoom).
   const requestRender = useCallback(() => {
     if (animationFrameRef.current) return;
     animationFrameRef.current = requestAnimationFrame(() => {
@@ -186,7 +186,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
   }, []);
 
   const scaleToZoom = useCallback((scale: number) => Math.round(10 + (scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE) * 90), []);
-  // WorldPage는 자체 zoom 관리, ZoomSlider에 동기화만
+  // WorldPage???�체 zoom 관�? ZoomSlider???�기?�만
 
   useEffect(() => {
     transformRef.current = transform;
@@ -459,7 +459,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         }
       }
 
-      // Draw moon glow and planet inside transform — panned/zoomed with the graph
+      // Draw moon glow and planet inside transform ??panned/zoomed with the graph
       if (moonRadius > 0 && t < 1) {
         const fixedMoonRadius = moonBaseRadius;
         const glowAlpha = (1 - t) * 0.4;
@@ -832,3 +832,5 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     </div>
   );
 }
+
+

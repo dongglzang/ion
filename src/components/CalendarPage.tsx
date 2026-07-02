@@ -11,11 +11,14 @@ import type { Post } from '@/types';
 
 interface CalendarPageProps {
   posts: Post[];
+  view: 'month' | 'detail' | 'expanded';
+  onViewChange: (view: 'month' | 'detail' | 'expanded') => void;
   onDeletePost: (postId: string) => void;
   onUpdatePost: (postId: string, opts: { content: string; mediaFile?: File }) => Promise<void>;
+  onWritePost: () => void;
+  onPostClick: (post: Post) => void;
+  currentUserId: string;
 }
-
-type View = 'month' | 'detail' | 'expanded';
 
 const DAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 const DAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -36,14 +39,25 @@ function formatTime(dateStr: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPageProps) {
+function formatDateTime(dateStr: string, isKorean: boolean): string {
+  const d = new Date(dateStr);
+  const h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const ampm = h < 12 ? (isKorean ? '오전' : 'AM') : (isKorean ? '오후' : 'PM');
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const datePart = isKorean
+    ? `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS_KO[d.getDay()]}`
+    : `${MONTHS_EN[d.getMonth()]} ${d.getDate()} ${WEEKDAYS_EN[d.getDay()]}`;
+  return `${datePart} ${ampm} ${hour12}:${m}`;
+}
+
+export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdatePost, onWritePost, onPostClick, currentUserId }: CalendarPageProps) {
   const { t, locale } = useI18n();
   const { requestCrop, CropModal } = useImageCropper();
 
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [view, setView] = useState<View>('month');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -116,6 +130,24 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
     }
   };
 
+  const handlePrevDay = () => {
+    setSelectedDate(prev => {
+      if (!prev) return null;
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() - 1);
+      return newDate;
+    });
+  };
+
+  const handleNextDay = () => {
+    setSelectedDate(prev => {
+      if (!prev) return null;
+      const newDate = new Date(prev);
+      newDate.setDate(newDate.getDate() + 1);
+      return newDate;
+    });
+  };
+
   const goToToday = () => {
     setCurrentYear(today.getFullYear());
     setCurrentMonth(today.getMonth());
@@ -123,28 +155,18 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
 
   const handleDateClick = (day: number) => {
     setSelectedDate(new Date(currentYear, currentMonth, day));
-    setView('detail');
+    onViewChange('detail');
   };
 
   const handlePostClick = (post: Post) => {
     setSelectedPost(post);
-    setView('expanded');
-  };
-
-  const handleBack = () => {
-    if (view === 'expanded') {
-      setSelectedPost(null);
-      setView('detail');
-    } else if (view === 'detail') {
-      setSelectedDate(null);
-      setView('month');
-    }
+    onPostClick(post);
   };
 
   const handleDelete = (postId: string) => {
     onDeletePost(postId);
     toast(t('myPage.deleted'), { duration: 2000 });
-    setView('detail');
+    onViewChange('detail');
     setSelectedPost(null);
   };
 
@@ -152,7 +174,7 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
     await onUpdatePost(postId, opts);
     setEditModalOpen(false);
     setSelectedPost(null);
-    setView('detail');
+    onViewChange('detail');
   };
 
   const isToday = (day: number) =>
@@ -234,7 +256,7 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
           </div>
 
           {/* ── Calendar grid (6 stable rows) ── */}
-          <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-1.5">
+          <div className="grid grid-cols-7 gap-1.5 min-h-0 flex-1" style={{ gridTemplateRows: 'repeat(6, 1fr)' }}>
             {paddedCalendarDays.map((day, idx) => {
               if (day === null) {
                 return <div key={`empty-${idx}`} aria-hidden className="rounded-xl" />;
@@ -251,36 +273,13 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
                   key={day}
                   onClick={() => handleDateClick(day)}
                   className={cn(
-                    'group relative flex flex-col overflow-hidden rounded-xl border border-border/40 bg-card/40 text-left transition-all duration-200',
+                    'group relative flex flex-col h-full overflow-hidden rounded-xl border border-border/40 bg-card/40 text-left transition-all duration-200',
                     'hover:border-accent/40 hover:bg-card hover:shadow-sm',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                     isTodayCell &&
                       'border-accent bg-accent/[0.08] shadow-[0_0_0_1px_oklch(var(--accent)/0.45)]',
                   )}
                 >
-                  {/* Media thumbnail (full bleed) */}
-                  {hasMedia && (
-                    <>
-                      {firstPost.mediaType === 'video' ? (
-                        <video
-                          src={firstPost.media}
-                          className="absolute inset-0 h-full w-full object-cover opacity-95 transition-opacity duration-200 group-hover:opacity-100"
-                          muted
-                          preload="metadata"
-                        />
-                      ) : (
-                        <img
-                          src={firstPost.media}
-                          alt=""
-                          className="absolute inset-0 h-full w-full object-cover opacity-95 transition-opacity duration-200 group-hover:opacity-100"
-                          draggable={false}
-                        />
-                      )}
-                      {/* Bottom scrim for dots legibility */}
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-9 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                    </>
-                  )}
-
                   {/* Day number chip — top-left, always visible */}
                   <span
                     className={cn(
@@ -293,9 +292,19 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
                     )}
                   >
                     {day}
+                    {postCount > 0 && (
+                      <span className={cn(
+                        'absolute -top-1 -right-1 flex items-center justify-center rounded-full text-[9px] font-bold leading-none min-w-[14px] h-[14px] px-1',
+                        postCount > 1
+                          ? 'bg-accent text-accent-foreground'
+                          : 'bg-muted-foreground/70 text-background'
+                      )}>
+                        {postCount > 1 ? `+${postCount - 1}` : ''}
+                      </span>
+                    )}
                   </span>
 
-                  {/* Post thumbnail */}
+                  {/* Post thumbnail or media */}
                   {postCount > 0 && (
                     <div className="relative flex-1 w-full mt-1 overflow-hidden rounded-lg">
                       {firstPost.mediaType === 'video' ? (
@@ -361,25 +370,39 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
 
     return (
       <div className="flex h-full flex-col">
-        {/* Header */}
+        {/* Header: ◀ 날짜 ▶ */}
         <div className="mb-4 flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleBack}
-            aria-label="Back"
-            className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            onClick={handlePrevDay}
+            aria-label="Previous day"
+            className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           >
             <ChevronLeft className="h-[18px] w-[18px]" />
           </Button>
-          <span className="font-display text-[16px] font-semibold tracking-tight text-foreground">
-            {dateLabel}
-          </span>
-          {selectedDatePosts.length > 0 && (
-            <span className="ml-auto rounded-full bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-              {selectedDatePosts.length}
+
+          <div className="flex flex-1 items-center justify-center gap-2">
+            <CalendarDays className="h-5 w-5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <span className="font-display text-[16px] font-semibold tracking-tight text-foreground">
+              {dateLabel}
             </span>
-          )}
+            {selectedDatePosts.length > 0 && (
+              <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {selectedDatePosts.length}
+              </span>
+            )}
+          </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleNextDay}
+            aria-label="Next day"
+            className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            <ChevronRight className="h-[18px] w-[18px]" />
+          </Button>
         </div>
 
         {selectedDatePosts.length === 0 ? (
@@ -387,7 +410,16 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/40">
               <CalendarDays className="h-7 w-7 text-muted-foreground/40" strokeWidth={1.5} />
             </div>
-            <p className="text-sm text-muted-foreground">{t('calendar.noPostsThisDate')}</p>
+            <p className="text-sm text-muted-foreground mb-4">{t('calendar.noPostsThisDate')}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onWritePost}
+              className="gap-1.5 border-accent/30 hover:bg-accent/10 text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {isKorean ? '글쓰기' : 'Write a post'}
+            </Button>
           </div>
         ) : (
           <div className="flex-1 space-y-2 overflow-y-auto pr-1">
@@ -446,44 +478,42 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
 
     return (
       <div className="flex h-full flex-col">
-        {/* Header */}
+        {/* Header: ◀ 날짜 ▶ */}
         <div className="mb-4 flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleBack}
-            aria-label="Back"
-            className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            onClick={handlePrevDay}
+            aria-label="Previous day"
+            className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           >
             <ChevronLeft className="h-[18px] w-[18px]" />
           </Button>
-          <span className="font-display text-[16px] font-semibold tracking-tight text-foreground">
-            {selectedDate
-              ? isKorean
-                ? `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일`
-                : `${MONTHS[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${currentYear}`
-              : ''}
-          </span>
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setEditModalOpen(true)}
-              aria-label="Edit"
-              className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-            >
-              <Pencil className="h-[16px] w-[16px]" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleDelete(selectedPost.id)}
-              aria-label="Delete"
-              className="h-9 w-9 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-[16px] w-[16px]" />
-            </Button>
+
+          <div className="flex flex-1 items-center justify-center gap-2">
+            <span className="font-display text-[16px] font-semibold tracking-tight text-foreground">
+              {selectedDate
+                ? isKorean
+                  ? `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 ${WEEKDAYS[selectedDate.getDay()]}`
+                  : `${MONTHS[selectedDate.getMonth()]} ${selectedDate.getDate()}, ${currentYear}`
+                : ''}
+            </span>
+            {selectedPost?.authorId === currentUserId && selectedPost?.createdAt && (
+              <span className="text-xs text-muted-foreground">
+                {formatDateTime(selectedPost.createdAt, isKorean)}
+              </span>
+            )}
           </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleNextDay}
+            aria-label="Next day"
+            className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          >
+            <ChevronRight className="h-[18px] w-[18px]" />
+          </Button>
         </div>
 
         {/* Content */}
@@ -513,6 +543,30 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
                 {selectedPost.content}
               </p>
             )}
+
+            {/* Action buttons */}
+            {selectedPost?.authorId === currentUserId && (
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditModalOpen(true)}
+                  className="gap-1.5 flex-1 border-accent/30 hover:bg-accent/10"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {isKorean ? '수정' : 'Edit'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDelete(selectedPost.id)}
+                  className="gap-1.5 flex-1 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {isKorean ? '삭제' : 'Delete'}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -531,7 +585,7 @@ export function CalendarPage({ posts, onDeletePost, onUpdatePost }: CalendarPage
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="mx-auto flex h-full w-full max-w-[640px] flex-col px-3 py-4 sm:px-5 sm:py-5">
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {view === 'month' && renderMonthView()}
           {view === 'detail' && renderDetailView()}
           {view === 'expanded' && renderExpandedView()}
