@@ -226,7 +226,7 @@ export function PostCard({
   return (
     <div
       ref={containerRef}
-      className={`absolute pointer-events-auto select-none ${isDragging ? 'cursor-grabbing z-10' : 'cursor-grab'}`}
+      className={`group absolute pointer-events-auto select-none ${isDragging ? 'cursor-grabbing z-10' : 'cursor-grab'}`}
       style={{
         width: size,
         height: size,
@@ -320,7 +320,7 @@ export function PostCard({
             e.stopPropagation();
             onToggleLike();
           }}
-          className="absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md z-10 active:scale-[0.85] focus-visible:opacity-100 transition-opacity duration-150 opacity-100"
+          className="absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md z-10 active:scale-[0.85] focus-visible:opacity-100 transition-opacity duration-150 ${isLiked ? 'opacity-100' : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100'}"
           style={{
             backgroundColor: isLiked ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.32)',
           }}
