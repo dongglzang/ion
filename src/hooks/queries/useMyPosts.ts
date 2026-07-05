@@ -44,15 +44,15 @@ export function useCreatePost(userId: string, authorName: string) {
       const sys = systems.find((s) => s.id === opts.systemId);
 
       // 작성자의 행성은 useProfile 캐시에서 해석 (낙관적 표시 시 깜빡임 방지).
-      // 캐시 미스 시 마이페이지 리패치로 보정. 'moon' 폴백은 행성 미선택 사용자.
-      const profile = queryClient.getQueryData<{ planet?: string }>(queryKeys.profile(userId));
+      // 캐시 미스 시 마이페이지 리패치로 보정. 0 폴백은 캐시 미스 케이스.
+      const profile = queryClient.getQueryData<{ planetSeed?: number }>(queryKeys.profile(userId));
       const overlays = Array.isArray(row.overlays) ? (row.overlays as Overlay[]) : undefined;
 
       return {
         id: row.id,
         authorId: row.author_id,
         authorName,
-        authorPlanet: (profile?.planet as Post['authorPlanet']) ?? 'moon',
+        authorPlanetSeed: (profile?.planetSeed ?? 0) >>> 0,
         bgColor: row.bg_color ?? undefined,
         media: row.media_url ?? undefined,
         mediaType: row.media_type ?? undefined,

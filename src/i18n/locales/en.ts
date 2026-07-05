@@ -116,9 +116,16 @@ export const en = {
   'notification.resonance': 'Someone resonated with you',
   'notification.resonanceDescription': 'Two universes briefly overlapped',
 
-  // PlanetSelector
-  'planetSelector.title': 'Choose your planet',
-  'planetSelector.subtitle': 'Your private cosmic identity',
+  // RerollModal (planet gacha)
+  'reroll.title': 'My Planet',
+  'reroll.subtitle': 'A new planet is born on every roll',
+  'reroll.current': 'Current',
+  'reroll.new': 'New',
+  'reroll.reroll': 'Reroll',
+  'reroll.apply': 'Apply',
+  'reroll.applying': 'Applying…',
+  'reroll.applyFailed': 'Failed to apply. Please try again.',
+  'reroll.appliedHint': 'Once applied, others will see it right away',
 
   // WorldPage
   'world.failed': 'Failed to load graph',

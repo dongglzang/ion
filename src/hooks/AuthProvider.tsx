@@ -12,7 +12,8 @@ import { clearUserSessionState } from '@/hooks/queries/useFeed';
 export interface AuthUser {
   id: string;
   displayName: string;
-  planet: string;
+  /** 결정적 uint32 시드. RerollModal "적용하기" 가 이것을 갱신. */
+  planetSeed: number;
   statusMessage: string | null;
 }
 
@@ -22,7 +23,7 @@ interface AuthContextValue {
   login: () => Promise<void>;
   devLogin: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  setPlanet: (planet: string) => void;
+  setPlanetSeed: (planetSeed: number) => void;
   setDisplayName: (name: string) => void;
   setStatusMessage: (message: string | null) => void;
 }
@@ -40,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser({
           id: authUser.id,
           displayName: authUser.display_name,
-          planet: authUser.planet,
+          planetSeed: (authUser.planet_seed ?? 0) >>> 0,
           statusMessage: authUser.status_message ?? null,
         });
       } else {
@@ -73,9 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 명시적으로 여기서 또 처리하면 중복 + signOut 실패 시 부분 정리 위험.
     await signOut();
   }, []);
-
-  const setPlanet = useCallback((planet: string) => {
-    setUser((prev) => (prev ? { ...prev, planet } : prev));
+  const setPlanetSeed = useCallback((planetSeed: number) => {
+    setUser((prev) => (prev ? { ...prev, planetSeed: planetSeed >>> 0 } : prev));
   }, []);
 
   const setDisplayName = useCallback((displayName: string) => {
@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, devLogin, logout, setPlanet, setDisplayName, setStatusMessage }}>
+    <AuthContext.Provider value={{ user, isLoading, login, devLogin, logout, setPlanetSeed, setDisplayName, setStatusMessage }}>
       {children}
     </AuthContext.Provider>
   );

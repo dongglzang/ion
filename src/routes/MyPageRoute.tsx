@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/hooks/AuthProvider';
 import { useMyPostsQuery, useCreatePost, useDeletePost } from '@/hooks/queries/useMyPosts';
 import { useSystems } from '@/hooks/queries/useSystems';
-import { useUpdateProfile, useUpdatePlanet, useUpdateStatusMessage } from '@/hooks/queries/useProfile';
+import { useUpdateProfile, useUpdatePlanetSeed, useUpdateStatusMessage } from '@/hooks/queries/useProfile';
 import { MyPage as MyPageComponent } from '@/components/MyPage';
 import { LoginModal } from '@/components/LoginModal';
 import { Button } from '@/components/ui/button';
@@ -14,21 +14,20 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { LogIn, ArrowLeft } from 'lucide-react';
 import { deleteAccount } from '@/lib/supabase';
-import type { PlanetKey } from '@/constants/planets';
 
 export function MyPageRoute() {
   const { t } = useI18n();
-  const { user, logout, setPlanet, setDisplayName, setStatusMessage } = useAuth();
+  const { user, logout, setPlanetSeed, setDisplayName, setStatusMessage } = useAuth();
   const userId = user?.id ?? '';
   const authorName = user?.displayName ?? '';
-  const authorPlanet = user?.planet ?? 'moon';
+  const authorPlanetSeed = (user?.planetSeed ?? 0) >>> 0;
   const userStatusMessage = user?.statusMessage ?? null;
 
   const { data: posts = [], isLoading, isError, refetch } = useMyPostsQuery(userId);
   const { mutateAsync: createPostMutate } = useCreatePost(userId, authorName);
   const { mutate: deletePostMutate } = useDeletePost(userId);
   const { mutateAsync: updateProfileMutate } = useUpdateProfile(userId);
-  const { mutateAsync: updatePlanetMutate } = useUpdatePlanet(userId);
+  const { mutateAsync: updatePlanetSeedMutate } = useUpdatePlanetSeed(userId);
   const { mutateAsync: updateStatusMutate } = useUpdateStatusMessage(userId);
   const { data: systems = [] } = useSystems();
   const defaultSystemId = systems.find((s) => s.isDefault)?.id ?? '';
@@ -49,9 +48,9 @@ export function MyPageRoute() {
     setDisplayName(name);
   };
 
-  const handleChangePlanet = async (planet: PlanetKey) => {
-    await updatePlanetMutate(planet);
-    setPlanet(planet);
+  const handleChangePlanetSeed = async (seed: number) => {
+    await updatePlanetSeedMutate(seed);
+    setPlanetSeed(seed);
   };
 
   const handleChangeStatusMessage = async (next: string | null) => {
@@ -89,8 +88,9 @@ export function MyPageRoute() {
     <>
       <MyPageComponent
         posts={posts}
+        userId={userId}
         userName={authorName}
-        userPlanet={authorPlanet as PlanetKey}
+        userPlanetSeed={authorPlanetSeed}
         userStatusMessage={userStatusMessage}
         isLoading={isLoading}
         isError={isError}
@@ -100,7 +100,7 @@ export function MyPageRoute() {
         onCreatePost={async (opts) => { await createPostMutate({ ...opts, systemId: defaultSystemId }); }}
         onDeletePost={(postId) => { deletePostMutate(postId); }}
         onChangeName={handleChangeName}
-        onChangePlanet={handleChangePlanet}
+        onChangePlanetSeed={handleChangePlanetSeed}
         onChangeStatusMessage={handleChangeStatusMessage}
         requestImageCrop={requestCrop}
       />
@@ -131,7 +131,7 @@ function GuestGate() {
         >
           <div className="absolute inset-0 bg-accent/10 rounded-full blur-2xl" />
           <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-card border border-border/50 flex items-center justify-center">
-            <PlanetAvatar planet="moon" size={64} showGlow className="opacity-40" />
+            <PlanetAvatar planetSeed={0} size={64} showGlow className="opacity-40" />
           </div>
         </motion.div>
         <motion.h1

@@ -6,20 +6,21 @@ import { Plus, Image, Settings, Calendar, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { PlanetAvatar } from '@/components/PlanetAvatar';
-import { PlanetSelector } from '@/components/PlanetSelector';
+import { RerollModal } from '@/components/RerollModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { DeleteAccountDialog } from '@/components/DeleteAccountDialog';
 import { CalendarModal } from '@/components/CalendarModal';
 import { MyPostDetail } from '@/components/MyPostDetail';
 import { OverlayRenderer } from '@/components/OverlayRenderer';
 import { useI18n } from '@/i18n';
-import type { PlanetKey } from '@/constants/planets';
 import type { Post, Overlay } from '@/types';
 
 interface MyPageProps {
   posts: Post[];
   userName: string;
-  userPlanet: PlanetKey;
+  userId: string;
+  /** 결정적 uint32 시드. */
+  userPlanetSeed: number;
   /** Null = user hasn't set one yet → fallback to default slogan. */
   userStatusMessage: string | null;
   isLoading: boolean;
@@ -30,7 +31,8 @@ interface MyPageProps {
   onCreatePost: (opts: { mediaFile?: File; bgColor?: string; overlays?: Overlay[] }) => Promise<void>;
   onDeletePost: (postId: string) => void;
   onChangeName: (name: string) => Promise<void>;
-  onChangePlanet: (planet: PlanetKey) => Promise<void>;
+  /** RerollModal 의 "적용하기" 가 호출. mutation 이 DB 영구화 + 캐시 갱신. */
+  onChangePlanetSeed: (seed: number) => Promise<void>;
   onChangeStatusMessage: (message: string | null) => Promise<void>;
   requestImageCrop: (file: File) => Promise<Blob>;
 }
@@ -40,7 +42,8 @@ const STATUS_MAX_LENGTH = 80;
 export function MyPage({
   posts,
   userName,
-  userPlanet,
+  userId,
+  userPlanetSeed,
   userStatusMessage,
   isLoading,
   isError,
@@ -50,14 +53,14 @@ export function MyPage({
   onCreatePost,
   onDeletePost,
   onChangeName,
-  onChangePlanet,
+  onChangePlanetSeed,
   onChangeStatusMessage,
   requestImageCrop,
 }: MyPageProps) {
   const { t } = useI18n();
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
-  const [planetSelectorOpen, setPlanetSelectorOpen] = useState(false);
+  const [rerollOpen, setRerollOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -111,8 +114,8 @@ export function MyPage({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <button onClick={() => setPlanetSelectorOpen(true)} className="group shrink-0">
-              <PlanetAvatar planet={userPlanet} size={64} showGlow className="transition-transform group-hover:scale-105" />
+            <button onClick={() => setRerollOpen(true)} className="group shrink-0">
+              <PlanetAvatar planetSeed={userPlanetSeed} fallbackUserId={userId} size={64} showGlow className="transition-transform group-hover:scale-105" />
             </button>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">{userName}</h1>
@@ -228,21 +231,23 @@ export function MyPage({
         onSubmit={onCreatePost}
         requestImageCrop={requestImageCrop}
       />
-      <PlanetSelector
-        open={planetSelectorOpen}
-        onOpenChange={setPlanetSelectorOpen}
-        currentPlanet={userPlanet}
-        onSelect={onChangePlanet}
+      <RerollModal
+        open={rerollOpen}
+        onOpenChange={setRerollOpen}
+        userId={userId}
+        currentSeed={userPlanetSeed}
+        onApplied={onChangePlanetSeed}
       />
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        userId={userId}
         userName={userName}
-        userPlanet={userPlanet}
+        userPlanetSeed={userPlanetSeed}
         userStatusMessage={userStatusMessage}
         statusDefaultLabel={t('myPage.statusDefault')}
         onChangeName={onChangeName}
-        onChangePlanet={onChangePlanet}
+        onChangePlanetSeed={onChangePlanetSeed}
         onChangeStatusMessage={onChangeStatusMessage}
         onLogout={onLogout}
         onDeleteAccount={handleDeleteAccount}

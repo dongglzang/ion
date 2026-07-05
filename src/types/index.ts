@@ -1,5 +1,3 @@
-import type { PlanetKey } from '@/constants/planets';
-
 /**
  * 스토리식 텍스트 오버레이 단위 요소.
  * 에디터(CreateStoryModal)가 조작하고 OverlayRenderer(뷰어)가 동일 렌더링 — 드리프트 없음.
@@ -27,7 +25,11 @@ export interface Post {
   id: string;
   authorId: string;
   authorName: string;
-  authorPlanet: PlanetKey;
+  /**
+   * 작성자 행성 결정적 시드 (uint32). 모든 뷰어가 같은 authorId → 같은 시드.
+   * PlanetAvatar / WorldPage.drawPlanet / RerollModal 모두 이 시드를 단일 입력으로 받는다.
+   */
+  authorPlanetSeed: number;
   /** 미디어 없는 스토리의 단색 배경 (#rrggbb). media 보다 우선순위 낮음. */
   bgColor?: string;
   media?: string;

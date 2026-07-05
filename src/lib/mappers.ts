@@ -1,5 +1,4 @@
 import type { Post, Overlay } from '@/types';
-import type { PlanetKey } from '@/constants/planets';
 import type { FeedRow } from '@/lib/supabase';
 
 export function toPost(row: FeedRow): Post {
@@ -7,7 +6,7 @@ export function toPost(row: FeedRow): Post {
     id: row.id,
     authorId: row.author_id,
     authorName: row.author_display_name || 'Anonymous',
-    authorPlanet: (row.author_planet ?? 'moon') as PlanetKey,
+    authorPlanetSeed: (row.author_planet_seed ?? 0) >>> 0,
     bgColor: row.bg_color ?? undefined,
     media: row.media_url ?? undefined,
     mediaType: row.media_type ?? undefined,

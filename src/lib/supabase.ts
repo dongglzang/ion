@@ -20,7 +20,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export interface Profile {
   id: string;
   display_name: string;
-  planet: string;
+  planet_seed: number;
   email: string | null;
   status_message: string | null;
   created_at: string;
@@ -35,11 +35,12 @@ export interface FeedRow {
   overlays?: unknown[] | null;
   created_at: string;
   author_display_name: string;
-  author_planet: string;
+  author_planet_seed: number;
   system_id: string;
   system_slug: string;
   system_name: string;
 }
+
 
 export interface SystemRow {
   id: string;
@@ -83,21 +84,21 @@ export async function signOut(): Promise<void> {
 }
 
 export function onAuthStateChange(
-  callback: (user: { id: string; display_name: string; planet: string; status_message: string | null } | null) => void,
+  callback: (user: { id: string; display_name: string; planet_seed: number; status_message: string | null } | null) => void,
 ) {
   return supabase.auth.onAuthStateChange(async (_event, session) => {
     if (!session?.user) return callback(null);
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, display_name, planet, status_message')
+      .select('id, display_name, planet_seed, status_message')
       .eq('id', session.user.id)
       .single();
 
     callback({
       id: session.user.id,
       display_name: profile?.display_name ?? session.user.user_metadata?.full_name ?? 'Anonymous',
-      planet: profile?.planet ?? 'moon',
+      planet_seed: (profile?.planet_seed ?? 0) >>> 0,
       status_message: profile?.status_message ?? null,
     });
   });
@@ -110,7 +111,7 @@ export function onAuthStateChange(
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, display_name, planet, email, status_message, created_at')
+    .select('id, display_name, planet_seed, email, status_message, created_at')
     .eq('id', userId)
     .single();
   if (error) throw error;
@@ -121,8 +122,8 @@ export function updateDisplayName(userId: string, name: string) {
   return supabase.from('profiles').update({ display_name: name }).eq('id', userId);
 }
 
-export function updatePlanet(userId: string, planet: string) {
-  return supabase.from('profiles').update({ planet }).eq('id', userId);
+export function updatePlanetSeed(userId: string, planetSeed: number) {
+  return supabase.from('profiles').update({ planet_seed: (planetSeed >>> 0) }).eq('id', userId);
 }
 
 /** Empty string clears the user's status and falls back to the default slogan. */
@@ -209,7 +210,7 @@ export async function getUserPosts(userId: string): Promise<FeedRow[]> {
     .select(`
       id, author_id, bg_color, media_url, media_type, overlays, created_at, system_id,
       author_display_name:profiles!posts_author_id_fkey(display_name),
-      author_planet:profiles!posts_author_id_fkey(planet),
+      author_planet_seed:profiles!posts_author_id_fkey(planet_seed),
       system_slug:systems!posts_system_id_fkey(slug),
       system_name:systems!posts_system_id_fkey(name)
     `)
@@ -227,7 +228,7 @@ export async function getUserPosts(userId: string): Promise<FeedRow[]> {
     overlays: p.overlays as unknown[] | null | undefined,
     created_at: p.created_at as string,
     author_display_name: ((p.author_display_name as { display_name: string }[])?.[0]?.display_name) ?? '',
-    author_planet: ((p.author_planet as { planet: string }[])?.[0]?.planet) ?? 'moon',
+    author_planet_seed: ((p.author_planet_seed as { planet_seed: number }[])?.[0]?.planet_seed ?? 0) >>> 0,
     system_id: p.system_id as string,
     system_slug: ((p.system_slug as { slug: string }[])?.[0]?.slug) ?? '',
     system_name: ((p.system_name as { name: string }[])?.[0]?.name) ?? '',

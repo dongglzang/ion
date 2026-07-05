@@ -116,9 +116,16 @@ export const ko = {
   'notification.resonance': '누군가와 공명했습니다',
   'notification.resonanceDescription': '두 우주가 잠시 겹쳤습니다',
 
-  // PlanetSelector
-  'planetSelector.title': '나의 행성 선택',
-  'planetSelector.subtitle': '오직 나만 볼 수 있는 우주 아이덴티티입니다',
+  // RerollModal (행성 뽑기)
+  'reroll.title': '나의 행성',
+  'reroll.subtitle': '뽑기마다 새로운 행성이 태어납니다',
+  'reroll.current': '현재',
+  'reroll.new': '새 행성',
+  'reroll.reroll': '다시 뽑기',
+  'reroll.apply': '적용하기',
+  'reroll.applying': '적용 중…',
+  'reroll.applyFailed': '적용에 실패했습니다. 다시 시도해 주세요.',
+  'reroll.appliedHint': '적용하면 다른 사람에게도 즉시 보여요',
 
   // WorldPage
   'world.failed': '그래프를 불러오지 못했습니다',
