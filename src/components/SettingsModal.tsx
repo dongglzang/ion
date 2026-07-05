@@ -17,7 +17,10 @@ import {
   X,
   ExternalLink,
   ChevronRight,
+  Quote,
+  Flag,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useI18n } from '@/i18n';
 import { PlanetAvatar } from '@/components/PlanetAvatar';
 import type { PlanetKey } from '@/constants/planets';
@@ -27,8 +30,11 @@ interface SettingsModalProps {
   onOpenChange: (open: boolean) => void;
   userName: string;
   userPlanet: PlanetKey;
+  userStatusMessage: string | null;
+  statusDefaultLabel: string;
   onChangeName: (name: string) => Promise<void>;
   onChangePlanet: (planet: PlanetKey) => Promise<void>;
+  onChangeStatusMessage: (message: string | null) => Promise<void>;
   onLogout: () => void;
   onDeleteAccount: () => void;
 }
@@ -38,16 +44,21 @@ export function SettingsModal({
   onOpenChange,
   userName,
   userPlanet,
+  userStatusMessage,
+  statusDefaultLabel,
   onChangeName,
   onChangePlanet,
+  onChangeStatusMessage,
   onLogout,
   onDeleteAccount,
 }: SettingsModalProps) {
   const { t, locale, setLocale } = useI18n();
 
   const [editName, setEditName] = useState(false);
+  const [editStatus, setEditStatus] = useState(false);
   const [legalModal, setLegalModal] = useState<'privacy' | 'terms' | null>(null);
   const [nameInput, setNameInput] = useState(userName || '');
+  const [statusInput, setStatusInput] = useState(userStatusMessage ?? '');
   const [saving, setSaving] = useState(false);
 
   const handleSaveName = async () => {
@@ -65,6 +76,25 @@ export function SettingsModal({
     setNameInput(userName || '');
     setEditName(false);
   };
+
+  const handleSaveStatus = async () => {
+    const trimmed = statusInput.trim();
+    const next = trimmed.length === 0 ? null : trimmed;
+    setSaving(true);
+    try {
+      await onChangeStatusMessage(next);
+      setEditStatus(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelStatus = () => {
+    setStatusInput(userStatusMessage ?? '');
+    setEditStatus(false);
+  };
+
+  const STATUS_MAX_LENGTH = 80;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,6 +140,50 @@ export function SettingsModal({
               </button>
             )}
           </section>
+
+
+          <section>
+            <div className="flex items-center gap-2 mb-2">
+              <Quote className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                {t('settings.statusMessage')}
+              </span>
+            </div>
+            {editStatus ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={statusInput}
+                  onChange={e => setStatusInput(e.target.value)}
+                  placeholder={statusDefaultLabel}
+                  className="flex-1 h-8 text-[13px]"
+                  maxLength={STATUS_MAX_LENGTH}
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveStatus();
+                    if (e.key === 'Escape') handleCancelStatus();
+                  }}
+                />
+                <Button size="sm" variant="ghost" onClick={handleSaveStatus} disabled={saving}>
+                  <Check className="w-3.5 h-3.5" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={handleCancelStatus}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditStatus(true)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-muted/40 border border-border/30 hover:bg-muted/60 transition-colors text-sm group"
+              >
+                <span className={(userStatusMessage && userStatusMessage.length > 0) ? 'text-foreground' : 'text-muted-foreground italic'}>
+                  {userStatusMessage && userStatusMessage.length > 0 ? userStatusMessage : statusDefaultLabel}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            )}
+          </section>
+
+
 
           {/* Planet */}
           <section>
@@ -179,15 +253,27 @@ export function SettingsModal({
               <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           </div>
+          <div className="h-px bg-border/50" />
+
+          <button
+            onClick={() => toast(t('settings.myReportsComingSoon'))}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-muted/40 transition-colors text-sm text-foreground/80 group"
+          >
+            <span className="flex items-center gap-2">
+              <Flag className="w-3.5 h-3.5 text-muted-foreground" />
+              {t('settings.myReports')}
+            </span>
+            <span className="text-[10px] text-muted-foreground/50">{t('settings.myReportsComingSoon')}</span>
+          </button>
 
           <div className="h-px bg-border/50" />
 
-          {/* Delete Account */}
+          {/* Delete Account — destructive card */}
           <button
             onClick={onDeleteAccount}
-            className="w-full flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground/60 hover:text-destructive transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-destructive/30 bg-destructive/5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-3.5 h-3.5" />
             {t('settings.deleteAccount')}
           </button>
         </div>

@@ -29,7 +29,7 @@ export function NotificationCenter({ userId }: NotificationCenterProps) {
     <>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative w-9 h-9 flex items-center justify-center hover:bg-accent/10 transition-colors touch-target rounded-md"
+        className="relative w-11 h-11 flex items-center justify-center hover:bg-accent/10 transition-colors touch-target rounded-md"
         aria-label={t('notification.title')}
       >
         <Bell className="w-4 h-4 text-muted-foreground" />
@@ -100,8 +100,8 @@ export function NotificationCenter({ userId }: NotificationCenterProps) {
                           <Bell className="w-4 h-4 text-accent" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground">{t('notification.resonance')}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{t('notification.resonanceDescription')}</p>
+                          <p className="text-sm font-semibold text-foreground">{t('notification.resonance')}</p>
+                          <p className="text-xs text-foreground/80 mt-0.5 leading-relaxed">{t('notification.resonanceDescription')}</p>
                           <p className="text-[10px] text-muted-foreground/50 mt-1">
                             {new Date(r.created_at).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
                           </p>

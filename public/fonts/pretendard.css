@@ -9,7 +9,7 @@
  * It covers the glyphs we need for SNS-feed style Korean + Latin
  * text without shipping the full font face (~765 KB / weight).
  *
- * Weights shipped: 400, 500, 600, 700, 800 (see DESIGN.md §3).
+ * Weights shipped: 400, 500, 600, 700 (see DESIGN.md §3).
  */
 @font-face {
   font-family: 'Pretendard';
@@ -39,10 +39,4 @@
   font-display: swap;
   src: url('/fonts/subset/Pretendard-Bold.subset.woff2') format('woff2');
 }
-@font-face {
-  font-family: 'Pretendard';
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url('/fonts/subset/Pretendard-ExtraBold.subset.woff2') format('woff2');
-}
+(empty)

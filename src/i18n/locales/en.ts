@@ -13,33 +13,38 @@ export const en = {
   'login.cancel': 'Cancel',
   'login.failed': 'Login failed',
 
-  // CreatePostModal
-  'createPost.title': 'New post',
-  'createPost.editTitle': 'Edit post',
-  'createPost.placeholder': "What's on your mind?",
-  'createPost.addMedia': 'Add a photo or video',
-  'createPost.dragDrop': 'Or drag and drop',
-  'createPost.mediaFormats': 'JPG, PNG, MP4 · up to 30MB',
-  'createPost.media': 'Media',
-  'createPost.posting': 'Posting...',
-  'createPost.editing': 'Saving...',
-  'createPost.post': 'Post',
-  'createPost.edit': 'Save changes',
-  'createPost.cancel': 'Cancel',
-  'createPost.requireContent': 'Please add content or media',
-  'createPost.tooLong': 'Your text is too long',
-  'createPost.created': 'Post created!',
-  'createPost.edited': 'Post updated!',
-  'createPost.failed': 'Failed to create post',
-  'createPost.editFailed': 'Failed to update post',
-  'createPost.authorSub': 'Public post',
-  'createPost.markdownHint': 'Shift+Enter for newline · ⌘+Enter to post',
-  'createPost.shortcutHint': '⌘ + Enter',
-  'createPost.previewLabel': 'Preview',
-  'createPost.previewHint': 'How it will look in the feed',
-  'createPost.previewEmpty': 'Feed card preview',
-  'createPost.previewAlt': 'Media preview',
-  'createPost.removeMedia': 'Remove media',
+  // CreateStoryModal
+  'createStory.title': 'Story',
+  'createStory.cancel': 'Cancel',
+  'createStory.requireImage': 'Choose a background photo',
+  'createStory.created': 'Story posted!',
+  'createStory.failed': 'Failed to post story',
+  'createStory.posting': 'Posting...',
+  'createStory.post': 'Post',
+  'createStory.uploadHint': 'Choose a background photo',
+  'createStory.changeImage': 'Change background',
+  'createStory.addText': 'Text',
+  'createStory.textPlaceholder': 'Type text',
+  'createStory.text': 'Text',
+  'createStory.color': 'Color',
+  'createStory.font': 'Font',
+  'createStory.weight': 'Weight',
+  'createStory.bold': 'Bold',
+  'createStory.regular': 'Regular',
+  'createStory.align': 'Align',
+  'createStory.tip': 'Place text freely on your photo.',
+  'createStory.emptyHint': 'Pick a background photo to start.',
+  'createStory.requireBackground': 'Choose a background photo or color',
+  'createStory.presets': 'Presets',
+  'createStory.customColor': 'Custom color',
+  'createStory.useImage': 'Use a photo instead',
+  'createStory.useColor': 'Use a color instead',
+  'compose.choose': 'What do you want to share?',
+  'compose.story': 'Story',
+  'compose.storyHint': 'Place text freely on photos',
+  'compose.post': 'Post',
+  'createStory.handleHint': 'Drag blue handle to resize, top handle to rotate, X to delete',
+  'compose.postHint': 'Text and photo/video',
 
   // FeedView
   'feed.noPosts': 'No posts yet',
@@ -52,7 +57,9 @@ export const en = {
   // MyPage
   'myPage.failed': 'Failed to load posts',
   'myPage.retry': 'Retry',
-  'myPage.tagline': 'Alone, but not lonely',
+  'myPage.statusDefault': 'Alone, but not lonely',
+  'myPage.statusEditHint': 'Tap to add your status',
+  'myPage.statusEditFailed': 'Failed to update status',
   'myPage.myPosts': 'My Posts',
   'myPage.new': 'New',
   'myPage.noPosts': 'No posts yet',
@@ -72,6 +79,7 @@ export const en = {
   // SettingsModal
   'settings.title': 'Settings',
   'settings.displayName': 'Display Name',
+  'settings.statusMessage': 'Status Message',
   'settings.planet': 'Planet',
   'settings.language': 'Language',
   'settings.logout': 'Logout',
@@ -182,6 +190,23 @@ export const en = {
   'calendar.title': 'Calendar',
   'calendar.today': 'Today',
   'calendar.noPostsThisDate': 'No posts on this date',
+
+  // Compose Choice Sheet
+  'compose.storyDetail': 'Place text, emoji, and drawing freely on a photo',
+  'compose.postDetail': 'Text with photo or video',
+
+  // MyPage Guest
+  'myPage.guestPreview': 'Here is what you will see after signing in',
+
+  // Settings
+  'settings.myReports': 'My reports',
+  'settings.myReportsComingSoon': 'Coming soon',
+
+  // World
+  'world.loading': 'Drawing the graph...',
+
+  // Report
+  'report.confirmArmed': 'Are you sure? Tap again to confirm',
 
   // General/Common
   'common.loading': 'Loading...',

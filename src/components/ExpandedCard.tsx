@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Post } from '@/types';
-import { CollageOverlay } from '@/components/CollageOverlay';
+import { OverlayRenderer } from '@/components/OverlayRenderer';
 
 interface ExpandedCardProps {
   open: boolean;
@@ -96,22 +96,44 @@ export function ExpandedCard({
                     draggable={false}
                   />
                 )}
-                {post.content && (
-                  <CollageOverlay
-                    text={post.content}
-                    color={post.textOverlay}
-                    customColor={post.textColor}
-                    fontSize={18}
-                  />
+                {post.overlays && post.overlays.length > 0 && (
+                  <OverlayRenderer overlays={post.overlays} />
                 )}
               </>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center p-8">
-                <p className="text-[18px] leading-[1.55] text-foreground text-center whitespace-pre-wrap break-words max-w-[36ch]">
-                  {post.content}
-                </p>
+            ) : post.bgColor ? (
+              <div
+                className="absolute inset-0"
+                style={{ background: post.bgColor }}
+              >
+                {post.overlays && post.overlays.length > 0 && (
+                  <OverlayRenderer overlays={post.overlays} />
+                )}
+                {post.authorName && (
+                  <span className="absolute top-3 left-3 z-10 px-2 py-0.5 rounded-full text-xs font-medium bg-foreground/80 text-background backdrop-blur-sm">
+                    @{post.authorName}
+                  </span>
+                )}
+                {post.createdAt && (
+                  <span className="absolute bottom-3 left-3 text-[10px] text-muted-foreground/70">
+                    {new Date(post.createdAt).toLocaleDateString('ko-KR')}
+                  </span>
+                )}
               </div>
-            )}
+            ) : post.overlays && post.overlays.length > 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-8 pt-12">
+                {post.authorName && (
+                  <span className="absolute top-3 left-3 z-10 px-2 py-0.5 rounded-full text-xs font-medium bg-foreground/80 text-background backdrop-blur-sm">
+                    @{post.authorName}
+                  </span>
+                )}
+                <OverlayRenderer overlays={post.overlays} />
+                {post.createdAt && (
+                  <span className="absolute bottom-3 left-3 text-[10px] text-muted-foreground/70">
+                    {new Date(post.createdAt).toLocaleDateString('ko-KR')}
+                  </span>
+                )}
+              </div>
+            ) : null}
 
             {/* 닫기 — 우상단 */}
             <motion.button
@@ -140,7 +162,7 @@ export function ExpandedCard({
                 onToggleLike();
               }}
               whileTap={{ scale: 0.85 }}
-              className={`${overlayClass} bottom-3 right-3`}
+              className={`${overlayClass} bottom-3 right-3 w-10 h-10`}
               style={overlayStyle}
               aria-label="like"
             >
@@ -148,7 +170,8 @@ export function ExpandedCard({
                 className="w-5 h-5"
                 style={{
                   fill: isLiked ? '#ec4899' : 'none',
-                  stroke: isLiked ? '#ec4899' : iconColor,
+
+
                 }}
                 strokeWidth={2}
                 viewBox="0 0 24 24"

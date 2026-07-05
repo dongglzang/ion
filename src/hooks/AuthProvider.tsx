@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { queryClient } from '@/lib/queryClient';
 import {
@@ -7,11 +7,13 @@ import {
   signOut,
   onAuthStateChange,
 } from '@/lib/supabase';
+import { clearUserSessionState } from '@/hooks/queries/useFeed';
 
 export interface AuthUser {
   id: string;
   displayName: string;
   planet: string;
+  statusMessage: string | null;
 }
 
 interface AuthContextValue {
@@ -22,23 +24,31 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   setPlanet: (planet: string) => void;
   setDisplayName: (name: string) => void;
+  setStatusMessage: (message: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const prevUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = onAuthStateChange((authUser) => {
       if (authUser) {
+        prevUserIdRef.current = authUser.id;
         setUser({
           id: authUser.id,
           displayName: authUser.display_name,
           planet: authUser.planet,
+          statusMessage: authUser.status_message ?? null,
         });
       } else {
+        // 세션별 메모리(dismissedByUser, refillChainByUser) 폐기.
+        // 직전 사용자 키를 보존 → anon 키 또는 실 userId 어느 쪽이든
+        // 정확히 해당 entry 만 삭제.
+        clearUserSessionState(prevUserIdRef.current);
+        prevUserIdRef.current = null;
         setUser(null);
         queryClient.clear();
       }
@@ -57,9 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // signOut() → Supabase SIGNED_OUT 이벤트 → onAuthStateChange(null) →
+    //   setUser(null) + queryClient.clear() 가 여기서 처리된다.
+    // passive 경로(토큰 만료·다른 탭 sign-out)도 동일 핸들러가 커버.
+    // 명시적으로 여기서 또 처리하면 중복 + signOut 실패 시 부분 정리 위험.
     await signOut();
-    setUser(null);
-    queryClient.clear();
   }, []);
 
   const setPlanet = useCallback((planet: string) => {
@@ -70,8 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => (prev ? { ...prev, displayName } : prev));
   }, []);
 
+  const setStatusMessage = useCallback((statusMessage: string | null) => {
+    setUser((prev) => (prev ? { ...prev, statusMessage } : prev));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, devLogin, logout, setPlanet, setDisplayName }}>
+    <AuthContext.Provider value={{ user, isLoading, login, devLogin, logout, setPlanet, setDisplayName, setStatusMessage }}>
       {children}
     </AuthContext.Provider>
   );

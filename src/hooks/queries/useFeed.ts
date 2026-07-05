@@ -30,7 +30,15 @@ function setRefillChain(userId: string, p: Promise<void>) {
   refillChainByUser.set(userId || ANON_KEY, p);
 }
 
-export function useFeedQuery(userId: string) {
+// 로그아웃/사용자 전환 시 세션별 상태 폐기.
+// onAuthStateChange(null) → queryClient.clear() 와 함께 호출되어야 메모리 leak 방지.
+export function clearUserSessionState(userId: string | null) {
+  const key = userId || ANON_KEY;
+  dismissedByUser.delete(key);
+  refillChainByUser.delete(key);
+}
+
+export function useFeedQuery(userId: string, systemId?: string | null) {
   const { zoomLevel } = useClient();
   const { width, height } = useDeviceSize();
 
@@ -43,18 +51,19 @@ export function useFeedQuery(userId: string) {
   }, [width, height, zoomLevel]);
 
   // 비로그인도 피드를 본다. userId가 비어 있어도 쿼리를 실행한다.
+  // systemId: null=전역(모든 항성계 합집합), 특정=해당 항성계만.
   return useQuery({
-    queryKey: queryKeys.feed(userId || ANON_KEY),
+    queryKey: queryKeys.feed(userId || ANON_KEY, systemId),
     queryFn: async () => {
-      const rows = await getFeed(userId, batchSize, Array.from(getDismissed(userId)));
+      const rows = await getFeed(userId, batchSize, Array.from(getDismissed(userId)), systemId);
       return rows.map(toPost);
     },
   });
 }
 
-export function useDismissPost(userId: string) {
+export function useDismissPost(userId: string, systemId?: string | null) {
   const queryClient = useQueryClient();
-  const key = queryKeys.feed(userId || ANON_KEY);
+  const key = queryKeys.feed(userId || ANON_KEY, systemId);
 
   return useCallback(
     (postId: string) => {
@@ -66,13 +75,12 @@ export function useDismissPost(userId: string) {
         old.filter((p) => p.id !== postId)
       );
 
-      // 2) 풀 보충 — 직렬화 체인으로 묶어 빠른 연속 dismiss에도 중복 없이 1개씩만 추가.
-      //    각 보충은 이전 보충 완료 후 실행되므로 항상 최신 캐시 기준으로 exclude 계산.
+      // 2) 풀 보충 — 같은 항성계 풀에서. 직렬화 체인으로 중복 없이 1개씩만.
       const run = async () => {
         const current = queryClient.getQueryData<Post[]>(key) ?? [];
         const excludeIds = new Set([...current.map((p) => p.id), ...dismissedIds]);
         try {
-          const rows = await getFeed(userId, 1, Array.from(excludeIds));
+          const rows = await getFeed(userId, 1, Array.from(excludeIds), systemId);
           // 이중 방어: 서버가 exclude를 무시하고 돌려줘도 여기서 한 번 더 걸름
           const fresh = rows.map(toPost).filter((p) => !excludeIds.has(p.id));
           if (fresh.length > 0) {
@@ -82,7 +90,6 @@ export function useDismissPost(userId: string) {
               return deduped.length > 0 ? [...old, ...deduped] : old;
             });
           }
-          // 보충할 post가 없다면(풀 고갈) 그대로 둠 — k개 미달이지만 복구 불가.
         } catch {
           // 보충 실패해도 dismiss 자체는 유지
         }
@@ -90,13 +97,13 @@ export function useDismissPost(userId: string) {
       const prev = getRefillChain(userId);
       setRefillChain(userId, prev.then(run));
     },
-    [queryClient, key, userId]
+    [queryClient, key, userId, systemId]
   );
 }
 
-export function useRefetchFeed(userId: string) {
+export function useRefetchFeed(userId: string, systemId?: string | null) {
   const queryClient = useQueryClient();
   return useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.feed(userId || ANON_KEY) });
-  }, [queryClient, userId]);
+    queryClient.invalidateQueries({ queryKey: queryKeys.feed(userId || ANON_KEY, systemId) });
+  }, [queryClient, userId, systemId]);
 }

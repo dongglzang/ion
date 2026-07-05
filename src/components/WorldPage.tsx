@@ -675,8 +675,12 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     return (
       <div className="world-page">
         <div className="world-page__backdrop" />
-        <div className="fixed inset-0 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        <div className="fixed inset-0 flex flex-col items-center justify-center gap-4">
+          <div className="relative w-12 h-12">
+            <div className="absolute inset-0 rounded-full bg-accent/10 animate-pulse" />
+            <div className="absolute inset-2 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
+          </div>
+          <p className="text-sm text-muted-foreground/80">{t('world.loading')}</p>
         </div>
       </div>
     );
@@ -756,6 +760,14 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
           </div>
         </div>
         <div className={`world-page__panel-content ${!panelOpen ? 'world-page__panel-content--collapsed' : ''}`}>
+          <button
+            type="button"
+            onClick={() => { setCohesion(DEFAULT_COHESION); startRenderLoop(); }}
+            className="w-full mb-3 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-accent border border-border/30 rounded-lg hover:border-accent/30 transition-colors"
+          >
+            기본값으로
+          </button>
+
           <div className="world-page__slider-group">
             <div className="world-page__slider-row">
               <span className="world-page__slider-label">{t('world.linkStrength')}</span>

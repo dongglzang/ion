@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useCallback, useEffect } from 'react';
-import type { Post } from '@/types';
+import type { Post, System } from '@/types';
 import { positionStore } from '@/stores/positionStore';
 import { PostCard } from './PostCard';
 
@@ -16,9 +16,11 @@ interface FeedCardsProps {
   expandedPostId?: string | null;
   likedIds?: string[];
   onToggleLike?: (postId: string) => void;
+  /** systemId → System 매핑. 부모에서 useSystems() 1회 호출 결과를 전달. */
+  systemsById?: Map<string, System>;
 }
 
-export function FeedCards({ posts, onCardClick, onDelete, expandedPostId, likedIds = [], onToggleLike }: FeedCardsProps) {
+export function FeedCards({ posts, onCardClick, onDelete, expandedPostId, likedIds = [], onToggleLike, systemsById }: FeedCardsProps) {
   const positions = useSyncExternalStore(
     positionStore.subscribe,
     positionStore.getSnapshot
@@ -44,6 +46,7 @@ export function FeedCards({ posts, onCardClick, onDelete, expandedPostId, likedI
         const post = posts.find((p) => p.id === pos.id);
         if (!post) return null;
 
+        // 확장 모달로 열린 카드는 캔버스에서 숨김 (모달과 이중 표시 방지).
         if (expandedPostId && pos.id === expandedPostId) return null;
 
         return (
@@ -57,6 +60,7 @@ export function FeedCards({ posts, onCardClick, onDelete, expandedPostId, likedI
             isDragging={pos.isDragging}
             isDeleteMode={deleteModeId === pos.id}
             isLiked={likedIds.includes(post.id)}
+            system={post.systemId ? systemsById?.get(post.systemId) : undefined}
             onClick={() => onCardClick(post, { x: pos.x, y: pos.y, size: pos.size })}
             onToggleLike={() => onToggleLike?.(post.id)}
             onDelete={() => handleDelete(pos.id)}
