@@ -73,24 +73,14 @@ interface WorldPageProps {
   posts: Post[];
   connections: string[];
   currentUserId: string;
-  currentUserPlanet: string;
+  currentUserPlanetSeed: number;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
 }
 
-const PLANET_COLORS: Record<string, { light: string; mid: string; dark: string; glow: string }> = {
-  moon:    { light: 'hsl(45, 10%, 97%)', mid: 'hsl(42, 8%, 92%)', dark: 'hsl(40, 5%, 85%)', glow: 'hsl(45, 50%, 80%)' },
-  earth:   { light: 'hsl(155, 45%, 64%)', mid: 'hsl(210, 55%, 57%)', dark: 'hsl(210, 58%, 41%)', glow: 'hsl(200, 60%, 60%)' },
-  mars:    { light: 'hsl(30, 85%, 49%)', mid: 'hsl(15, 85%, 41%)', dark: 'hsl(10, 70%, 34%)', glow: 'hsl(20, 80%, 55%)' },
-  crystal: { light: 'hsl(280, 65%, 80%)', mid: 'hsl(280, 45%, 53%)', dark: 'hsl(210, 65%, 62%)', glow: 'hsl(270, 60%, 70%)' },
-  saturn:  { light: 'hsl(48, 85%, 62%)', mid: 'hsl(45, 75%, 59%)', dark: 'hsl(35, 60%, 50%)', glow: 'hsl(45, 75%, 60%)' },
-  jupiter: { light: 'hsl(30, 65%, 70%)', mid: 'hsl(25, 45%, 60%)', dark: 'hsl(15, 55%, 42%)', glow: 'hsl(25, 55%, 60%)' },
-  venus:   { light: 'hsl(350, 50%, 83%)', mid: 'hsl(350, 40%, 72%)', dark: 'hsl(25, 40%, 59%)', glow: 'hsl(10, 50%, 75%)' },
-  neptune: { light: 'hsl(200, 40%, 70%)', mid: 'hsl(215, 35%, 37%)', dark: 'hsl(215, 55%, 23%)', glow: 'hsl(210, 50%, 60%)' },
-  uranus:  { light: 'hsl(155, 50%, 75%)', mid: 'hsl(170, 40%, 60%)', dark: 'hsl(170, 35%, 48%)', glow: 'hsl(170, 50%, 70%)' },
-  pluto:   { light: 'hsl(35, 20%, 70%)', mid: 'hsl(30, 15%, 49%)', dark: 'hsl(25, 15%, 36%)', glow: 'hsl(35, 25%, 65%)' },
-};
+import { derivePlanetTraits, resolveSeed } from '@/constants/proceduralPlanets';
+import { toRenderSpec } from '@/constants/proceduralPlanetRender';
 
 const STAR_COLORS = [
   'hsla(25,  90%, 65%, 0.9)',
@@ -108,35 +98,84 @@ const hashCode = (str: string): number => {
   return Math.abs(hash);
 };
 
-function drawPlanet(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius: number, planetKey: string) {
-  const colors = PLANET_COLORS[planetKey] ?? PLANET_COLORS.moon;
-  const gradient = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius);
-  gradient.addColorStop(0, colors.light);
-  gradient.addColorStop(0.5, colors.mid);
-  gradient.addColorStop(1, colors.dark);
+/**
+ * 프로시저럴 행성 — Canvas 렌더러. PlanetAvatar 와 toRenderSpec 를 공유.
+ * 같은 시드 + 같은 radius → 두 렌더러가 동일 모양을 그린다.
+ */
+function drawPlanet(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  planetSeed: number,
+  fallbackUserId?: string,
+) {
+  const seed = resolveSeed(planetSeed, fallbackUserId);
+  const traits = derivePlanetTraits(seed);
+  const spec = toRenderSpec(traits, seed, radius);
 
+  // 본체 radial gradient — focal 은 spec 에서 읽는다 (PlanetAvatar 와 단일 출처).
+  // cx/cy 는 0..1 비율 → 픽셀로 환산. focal r=0 = point source.
+  const focalX = cx + (spec.bodyGradient.cx - 0.5) * 2 * radius;
+  const focalY = cy + (spec.bodyGradient.cy - 0.5) * 2 * radius;
+  const grad = ctx.createRadialGradient(focalX, focalY, 0, cx, cy, radius);
+  for (const stop of spec.bodyGradient.stops) {
+    grad.addColorStop(stop.offset, stop.color);
+  }
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
+  ctx.fillStyle = grad;
   ctx.fill();
 
-  // Subtle surface detail for moon specifically
-  if (planetKey === 'moon') {
-    const craters = [
-      { x: cx - radius * 0.3, y: cy - radius * 0.2, r: radius * 0.12 },
-      { x: cx + radius * 0.2, y: cy + radius * 0.3, r: radius * 0.08 },
-      { x: cx - radius * 0.1, y: cy + radius * 0.1, r: radius * 0.06 },
-    ];
-    for (const crater of craters) {
-      ctx.beginPath();
-      ctx.arc(crater.x, crater.y, crater.r, 0, Math.PI * 2);
-      ctx.fillStyle = 'hsla(30, 10%, 55%, 0.12)';
-      ctx.fill();
-    }
+  // bands + dots — 본체 원형에 clip.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  // 가로 줄무늬 (bands)
+  for (const band of spec.bands) {
+    const by = band.y * radius;
+    const bh = band.thickness * radius;
+    ctx.fillStyle = band.color;
+    ctx.fillRect(cx - radius, cy + by - bh / 2, radius * 2, bh);
+  }
+
+  // 패턴 (dots)
+  for (const dot of spec.dots) {
+    const dx = dot.x * radius;
+    const dy = dot.y * radius;
+    const r = Math.max(0.5, dot.r * radius);
+    ctx.beginPath();
+    ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
+    ctx.fillStyle = dot.color;
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // 고리 — Canvas 의 ctx.scale(1, ry/rx) 는 lineWidth 까지 같이 압축해
+  // stroke 를 사실상 사라지게 만든다. ellipse() 메서드 + transform 으로
+  // 정확한 두께를 보존한다.
+  if (spec.ring) {
+    const { rx, ry, tilt, color, width } = spec.ring;
+    const ringThickness = Math.max(1, width * radius);
+    const outerRx = rx * radius;
+    const outerRy = ry * radius;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((tilt * Math.PI) / 180);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outerRx, outerRy, 0, 0, Math.PI * 2);
+    ctx.lineWidth = ringThickness;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.restore();
   }
 }
 
-export function WorldPage({ posts, connections, currentUserId, currentUserPlanet, isLoading, isError, onRetry }: WorldPageProps) {
+export function WorldPage({ posts, connections, currentUserId, currentUserPlanetSeed, isLoading, isError, onRetry }: WorldPageProps) {
   const { t } = useI18n();
   const { theme, zoomLevel, setZoomLevel } = useClient();
   const isDarkMode = theme === 'black';
@@ -174,6 +213,12 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
   });
 
   const renderRef = useRef<(() => void) | null>(null);
+
+  // Stale closure 회피: 행성 시드는 prop 으로 들어오지만 render 함수가
+  // useEffect 안에서 만들어져 캡쳐됨. prop 갱신 시 useEffect 재실행 안 되니
+  // ref 로 미러링하여 render 가 매 프레임 최신 값을 읽게 한다.
+  const currentUserPlanetSeedRef = useRef(currentUserPlanetSeed);
+  useEffect(() => { currentUserPlanetSeedRef.current = currentUserPlanetSeed; }, [currentUserPlanetSeed]);
 
   // Paint-only: schedule a single rAF to render the current state.
   // Does NOT restart the d3 simulation ??used by camera ops (pan/zoom).
@@ -460,7 +505,7 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
       }
 
       // Draw moon glow and planet inside transform ??panned/zoomed with the graph
-      if (moonRadius > 0 && t < 1) {
+      if (moonRadius > 0) {
         const fixedMoonRadius = moonBaseRadius;
         const glowAlpha = (1 - t) * 0.4;
         const glowGrad = ctx.createRadialGradient(screenCenterX, screenCenterY + moonYOffset, fixedMoonRadius * 0.5, screenCenterX, screenCenterY + moonYOffset, fixedMoonRadius * 2.5);
@@ -470,9 +515,9 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
         ctx.arc(screenCenterX, screenCenterY + moonYOffset, fixedMoonRadius * 2.5, 0, Math.PI * 2);
         ctx.fillStyle = glowGrad;
         ctx.fill();
+      drawPlanet(ctx, screenCenterX, screenCenterY + moonYOffset, moonRadius, currentUserPlanetSeedRef.current, currentUserId);
       }
 
-      drawPlanet(ctx, screenCenterX, screenCenterY + moonYOffset, moonRadius, currentUserPlanet);
 
       ctx.restore();
     };
@@ -675,8 +720,12 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
     return (
       <div className="world-page">
         <div className="world-page__backdrop" />
-        <div className="fixed inset-0 flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        <div className="fixed inset-0 flex flex-col items-center justify-center gap-4">
+          <div className="relative w-12 h-12">
+            <div className="absolute inset-0 rounded-full bg-accent/10 animate-pulse" />
+            <div className="absolute inset-2 rounded-full border-2 border-accent/20 border-t-accent animate-spin" />
+          </div>
+          <p className="text-sm text-muted-foreground/80">{t('world.loading')}</p>
         </div>
       </div>
     );
@@ -756,6 +805,14 @@ export function WorldPage({ posts, connections, currentUserId, currentUserPlanet
           </div>
         </div>
         <div className={`world-page__panel-content ${!panelOpen ? 'world-page__panel-content--collapsed' : ''}`}>
+          <button
+            type="button"
+            onClick={() => { setCohesion(DEFAULT_COHESION); startRenderLoop(); }}
+            className="w-full mb-3 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-accent border border-border/30 rounded-lg hover:border-accent/30 transition-colors"
+          >
+            기본값으로
+          </button>
+
           <div className="world-page__slider-group">
             <div className="world-page__slider-row">
               <span className="world-page__slider-label">{t('world.linkStrength')}</span>

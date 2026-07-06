@@ -1,40 +1,50 @@
 import { useState } from 'react';
-
-import { CreatePostModal } from '@/components/CreatePostModal';
+import { CreateStoryModal } from '@/components/CreateStoryModal';
 import { Button } from '@/components/ui/button';
-import { Plus, Image, Settings, Calendar } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Plus, Image, Settings, Calendar, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { PlanetAvatar } from '@/components/PlanetAvatar';
-import { PlanetSelector } from '@/components/PlanetSelector';
+import { RerollModal } from '@/components/RerollModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { DeleteAccountDialog } from '@/components/DeleteAccountDialog';
 import { CalendarModal } from '@/components/CalendarModal';
 import { MyPostDetail } from '@/components/MyPostDetail';
+import { OverlayRenderer } from '@/components/OverlayRenderer';
 import { useI18n } from '@/i18n';
-import type { PlanetKey } from '@/constants/planets';
-import type { Post } from '@/types';
+import type { Post, Overlay } from '@/types';
 
 interface MyPageProps {
   posts: Post[];
   userName: string;
-  userPlanet: PlanetKey;
+  userId: string;
+  /** 결정적 uint32 시드. */
+  userPlanetSeed: number;
+  /** Null = user hasn't set one yet → fallback to default slogan. */
+  userStatusMessage: string | null;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
   onLogout: () => void;
   onDeleteAccount: () => Promise<void>;
-  onCreatePost: (opts: { content: string; mediaFile?: File }) => Promise<void>;
+  onCreatePost: (opts: { mediaFile?: File; bgColor?: string; overlays?: Overlay[] }) => Promise<void>;
   onDeletePost: (postId: string) => void;
   onChangeName: (name: string) => Promise<void>;
-  onChangePlanet: (planet: PlanetKey) => Promise<void>;
+  /** RerollModal 의 "적용하기" 가 호출. mutation 이 DB 영구화 + 캐시 갱신. */
+  onChangePlanetSeed: (seed: number) => Promise<void>;
+  onChangeStatusMessage: (message: string | null) => Promise<void>;
   requestImageCrop: (file: File) => Promise<Blob>;
 }
+
+const STATUS_MAX_LENGTH = 80;
 
 export function MyPage({
   posts,
   userName,
-  userPlanet,
+  userId,
+  userPlanetSeed,
+  userStatusMessage,
   isLoading,
   isError,
   onRetry,
@@ -43,13 +53,14 @@ export function MyPage({
   onCreatePost,
   onDeletePost,
   onChangeName,
-  onChangePlanet,
+  onChangePlanetSeed,
+  onChangeStatusMessage,
   requestImageCrop,
 }: MyPageProps) {
   const { t } = useI18n();
   const [createPostOpen, setCreatePostOpen] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
-  const [planetSelectorOpen, setPlanetSelectorOpen] = useState(false);
+  const [rerollOpen, setRerollOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
@@ -103,31 +114,37 @@ export function MyPage({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <button onClick={() => setPlanetSelectorOpen(true)} className="group shrink-0">
-              <PlanetAvatar planet={userPlanet} size={64} showGlow className="transition-transform group-hover:scale-105" />
+            <button onClick={() => setRerollOpen(true)} className="group shrink-0">
+              <PlanetAvatar planetSeed={userPlanetSeed} fallbackUserId={userId} size={64} showGlow className="transition-transform group-hover:scale-105" />
             </button>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">{userName}</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">{t('myPage.tagline')}</p>
+              <StatusMessageEditor
+                value={userStatusMessage}
+                fallback={t('myPage.statusDefault')}
+                maxLength={STATUS_MAX_LENGTH}
+                onSave={onChangeStatusMessage}
+                editHint={t('myPage.statusEditHint')}
+              />
             </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setCalendarOpen(true)}
-                aria-label={t('calendar.title')}
-                className="hover:text-foreground hover:shadow-[0_0_12px_oklch(var(--accent)/0.5)]"
-              >
-                <Calendar className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setSettingsOpen(true)}
-                aria-label={t('myPage.settings')}
-                className="hover:text-foreground hover:shadow-[0_0_12px_oklch(var(--accent)/0.5)]"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCalendarOpen(true)}
+              aria-label={t('calendar.title')}
+              className="hover:text-foreground hover:shadow-[0_0_12px_oklch(var(--accent)/0.5)]"
+            >
+              <Calendar className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              aria-label={t('myPage.settings')}
+              className="hover:text-foreground hover:shadow-[0_0_12px_oklch(var(--accent)/0.5)]"
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
           </motion.div>
         </div>
 
@@ -162,7 +179,7 @@ export function MyPage({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: Math.min(idx * 0.03, 0.3), duration: 0.25 }}
                 whileTap={{ scale: 0.96 }}
-                aria-label={post.content ? post.content.slice(0, 50) : t('myPage.myPosts')}
+                aria-label={t('myPage.myPosts')}
                 className="group relative aspect-square overflow-hidden bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
               >
                 {post.media ? (
@@ -190,11 +207,16 @@ export function MyPage({
                       draggable={false}
                     />
                   )
+                ) : post.bgColor ? (
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: post.bgColor }}
+                  />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center p-2.5 bg-muted/20">
-                    <p className="text-[11px] sm:text-xs leading-snug text-muted-foreground text-center line-clamp-5 whitespace-pre-wrap break-words">
-                      {post.content}
-                    </p>
+                  <div className="absolute inset-0 flex items-center justify-center p-2.5 bg-card">
+                    {post.overlays && post.overlays.length > 0 && (
+                      <OverlayRenderer overlays={post.overlays} />
+                    )}
                   </div>
                 )}
               </motion.button>
@@ -203,25 +225,30 @@ export function MyPage({
         )}
       </div>
 
-      <CreatePostModal
+      <CreateStoryModal
         open={createPostOpen}
         onOpenChange={setCreatePostOpen}
         onSubmit={onCreatePost}
         requestImageCrop={requestImageCrop}
       />
-      <PlanetSelector
-        open={planetSelectorOpen}
-        onOpenChange={setPlanetSelectorOpen}
-        currentPlanet={userPlanet}
-        onSelect={onChangePlanet}
+      <RerollModal
+        open={rerollOpen}
+        onOpenChange={setRerollOpen}
+        userId={userId}
+        currentSeed={userPlanetSeed}
+        onApplied={onChangePlanetSeed}
       />
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
+        userId={userId}
         userName={userName}
-        userPlanet={userPlanet}
+        userPlanetSeed={userPlanetSeed}
+        userStatusMessage={userStatusMessage}
+        statusDefaultLabel={t('myPage.statusDefault')}
         onChangeName={onChangeName}
-        onChangePlanet={onChangePlanet}
+        onChangePlanetSeed={onChangePlanetSeed}
+        onChangeStatusMessage={onChangeStatusMessage}
         onLogout={onLogout}
         onDeleteAccount={handleDeleteAccount}
       />
@@ -244,5 +271,93 @@ export function MyPage({
         isDeleting={deletingPostId !== null}
       />
     </div>
+  );
+}
+
+/* ─── Status Message (inline editor) ───
+ * Tap the slogan → enter edit mode. Enter or blur saves, Esc cancels.
+ * Empty / cleared value falls back to `fallback` (the default slogan)
+ * in both display and storage — DB column gets set to NULL.
+ */
+function StatusMessageEditor({
+  value,
+  fallback,
+  maxLength,
+  editHint,
+  onSave,
+}: {
+  value: string | null;
+  fallback: string;
+  maxLength: number;
+  editHint: string;
+  onSave: (next: string | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const display = value && value.length > 0 ? value : fallback;
+  const isCustom = !!value && value.length > 0;
+
+  const beginEdit = () => {
+    setDraft(value ?? '');
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    setDraft(value ?? '');
+    setEditing(false);
+  };
+
+  const save = async () => {
+    const trimmed = draft.trim();
+    const next = trimmed.length === 0 ? null : trimmed.slice(0, maxLength);
+    if (next === value) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch {
+      // 부모가 toast/에러를 띄우므로 여기서는 입력 모드 유지.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 mt-1">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => { if (!saving) save(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void save(); }
+            else if (e.key === 'Escape') cancel();
+          }}
+          disabled={saving}
+          maxLength={maxLength}
+          autoFocus
+          aria-label={editHint}
+          className="h-7 text-sm"
+        />
+        {saving && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={beginEdit}
+      aria-label={editHint}
+      className="block mt-0.5 text-left text-xs sm:text-sm text-muted-foreground hover:text-foreground/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 rounded"
+    >
+      {display}
+      {isCustom ? null : <span className="ml-1 text-[10px] text-muted-foreground/60">· {editHint}</span>}
+    </button>
   );
 }

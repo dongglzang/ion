@@ -27,7 +27,6 @@ const WEIGHTS = [
   { weight: 500, file: 'Pretendard-Medium.subset.woff2' },
   { weight: 600, file: 'Pretendard-SemiBold.subset.woff2' },
   { weight: 700, file: 'Pretendard-Bold.subset.woff2' },
-  { weight: 800, file: 'Pretendard-ExtraBold.subset.woff2' },
 ];
 
 const sourceDir = join(

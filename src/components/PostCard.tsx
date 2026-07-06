@@ -1,8 +1,9 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import type { Post } from '@/types';
+import type { Post, System } from '@/types';
 import { positionStore } from '@/stores/positionStore';
-import { CollageOverlay } from '@/components/CollageOverlay';
+import { OverlayRenderer } from '@/components/OverlayRenderer';
+import { PlanetAvatar } from '@/components/PlanetAvatar';
+import { renderSystemVisual } from '@/constants/stars';
 
 interface PostCardProps {
   post: Post;
@@ -13,6 +14,8 @@ interface PostCardProps {
   isDragging: boolean;
   isDeleteMode?: boolean;
   isLiked: boolean;
+  /** 부모에서 1회 fetch한 system 캐시. 카드가 5~15개 동시 렌더 시 useSystems() 중복 호출 제거. */
+  system?: System;
   onClick: () => void;
   onToggleLike: () => void;
   onDelete?: () => void;
@@ -27,6 +30,7 @@ export function PostCard({
   isDragging,
   isDeleteMode,
   isLiked,
+  system,
   onClick,
   onToggleLike,
   onDelete,
@@ -42,6 +46,7 @@ export function PostCard({
   const rotationFrameRef = useRef<number | undefined>(undefined);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const nearEdgeRef = useRef<'left' | 'right' | 'top' | 'bottom' | null>(null);
+  const systemVisual = system && !system.isDefault ? renderSystemVisual(system.palette) : null;
 
   function animateRotation() {
     const diff = targetRotationRef.current - currentRotationRef.current;
@@ -222,7 +227,7 @@ export function PostCard({
   return (
     <div
       ref={containerRef}
-      className={`absolute pointer-events-auto select-none ${isDragging ? 'cursor-grabbing z-10' : 'cursor-grab'}`}
+      className={`group absolute pointer-events-auto select-none ${isDragging ? 'cursor-grabbing z-10' : 'cursor-grab'}`}
       style={{
         width: size,
         height: size,
@@ -274,38 +279,56 @@ export function PostCard({
                 alt=""
                 className="w-full h-full object-cover"
                 draggable={false}
+                loading="lazy"
+                decoding="async"
               />
             )}
-            {post.content && (
-              <CollageOverlay
-                text={post.content}
-                color={post.textOverlay}
-                customColor={post.textColor}
-              />
+            {post.overlays && post.overlays.length > 0 && (
+              <OverlayRenderer overlays={post.overlays} />
+            )}
+          </div>
+        ) : post.bgColor ? (
+          <div
+            className="absolute inset-0"
+            style={{ background: post.bgColor }}
+          >
+            {systemVisual && (
+              <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/45 backdrop-blur-sm pointer-events-none max-w-[70%]">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: systemVisual.gradient }} />
+                <span className="text-[10px] text-white/90 truncate">{system?.name}</span>
+              </div>
+            )}
+            {post.overlays && post.overlays.length > 0 && (
+              <OverlayRenderer overlays={post.overlays} />
             )}
           </div>
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <p className="text-[15px] leading-[1.5] text-foreground text-center line-clamp-6">
-              {post.content}
-            </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 pt-9">
+            {systemVisual && (
+              <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/45 backdrop-blur-sm pointer-events-none max-w-[70%]">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: systemVisual.gradient }} />
+                <span className="text-[10px] text-white/90 truncate">{system?.name}</span>
+              </div>
+            )}
+            {post.overlays && post.overlays.length > 0 && (
+              <OverlayRenderer overlays={post.overlays} />
+            )}
           </div>
         )}
 
-        <motion.button
+        <button
           onClick={(e) => {
             e.stopPropagation();
             onToggleLike();
           }}
-          whileTap={{ scale: 0.85 }}
-          className="absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md z-10"
+          className="absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md z-10 active:scale-[0.85] focus-visible:opacity-100 transition-opacity duration-150 ${isLiked ? 'opacity-100' : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100'}"
           style={{
             backgroundColor: isLiked ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.32)',
           }}
           aria-label="like"
         >
           <svg
-            className="w-4 h-4"
+            className="w-4 h-4 transition-[fill,stroke] duration-200"
             style={{
               fill: isLiked ? '#ec4899' : 'none',
               stroke: '#ffffff',
@@ -313,25 +336,36 @@ export function PostCard({
             strokeWidth={2}
             viewBox="0 0 24 24"
           >
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41 0.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
           </svg>
-        </motion.button>
-
+        </button>
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            bottom: Math.round(size * 0.03),
+            left: Math.round(size * 0.05),
+          }}
+          aria-hidden
+        >
+          <PlanetAvatar
+            planetSeed={post.authorPlanetSeed}
+            fallbackUserId={post.authorId}
+            size={Math.max(24, Math.min(48, Math.round(size * 0.22)))}
+            flat
+          />
+        </div>
         {isDeleteMode && (
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
+          <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete?.();
             }}
-            className="absolute -top-2 -right-2 w-8 h-8 bg-[hsl(5,65%,48%)] text-white rounded-full flex items-center justify-center shadow-lg hover:opacity-90 transition-colors z-20"
+            className="absolute -top-2 -right-2 w-8 h-8 bg-[hsl(5,65%,48%)] text-white rounded-full flex items-center justify-center shadow-lg hover:opacity-90 transition-all duration-200 z-20 active:scale-90"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
-          </motion.button>
+          </button>
         )}
       </div>
 

@@ -13,33 +13,38 @@ export const ko = {
   'login.cancel': '취소',
   'login.failed': '로그인에 실패했습니다',
 
-  // CreatePostModal
-  'createPost.title': '새로운 피드',
-  'createPost.editTitle': '게시물 수정',
-  'createPost.placeholder': '무슨 생각을 하고 있나요?',
-  'createPost.addMedia': '사진 또는 동영상을 추가해주세요',
-  'createPost.dragDrop': '또는 드래그하여 업로드',
-  'createPost.mediaFormats': 'JPG, PNG, MP4 · 30MB 이하',
-  'createPost.media': '미디어',
-  'createPost.posting': '게시 중...',
-  'createPost.editing': '수정 중...',
-  'createPost.post': '게시하기',
-  'createPost.edit': '수정하기',
-  'createPost.cancel': '취소',
-  'createPost.requireContent': '내용 또는 사진/동영상을 추가해주세요',
-  'createPost.tooLong': '내용이 너무 깁니다',
-  'createPost.created': '게시물이 생성되었습니다!',
-  'createPost.edited': '게시물이 수정되었습니다!',
-  'createPost.failed': '게시물 생성에 실패했습니다',
-  'createPost.editFailed': '게시물 수정에 실패했습니다',
-  'createPost.authorSub': '공개 게시물',
-  'createPost.markdownHint': 'Shift+Enter로 줄바꿈 · ⌘+Enter로 게시',
-  'createPost.shortcutHint': '⌘ + Enter',
-  'createPost.previewLabel': '미리보기',
-  'createPost.previewHint': '피드에서 보이는 모습',
-  'createPost.previewEmpty': '피드 카드 미리보기',
-  'createPost.previewAlt': '미디어 미리보기',
-  'createPost.removeMedia': '미디어 제거',
+  // CreateStoryModal
+  'createStory.title': '스토리',
+  'createStory.cancel': '취소',
+  'createStory.requireImage': '배경 사진을 선택해주세요',
+  'createStory.created': '스토리가 게시되었습니다!',
+  'createStory.failed': '스토리 게시에 실패했습니다',
+  'createStory.posting': '게시 중...',
+  'createStory.post': '게시하기',
+  'createStory.uploadHint': '배경 사진을 선택해주세요',
+  'createStory.changeImage': '배경 변경',
+  'createStory.addText': '텍스트',
+  'createStory.textPlaceholder': '텍스트를 입력하세요',
+  'createStory.text': '텍스트',
+  'createStory.color': '색상',
+  'createStory.font': '폰트',
+  'createStory.weight': '두께',
+  'createStory.bold': '굵게',
+  'createStory.regular': '보통',
+  'createStory.align': '정렬',
+  'createStory.tip': '사진 위에 텍스트를 자유롭게 배치하세요.',
+  'createStory.emptyHint': '배경 사진을 선택해 시작하세요.',
+  'createStory.requireBackground': '배경 사진 또는 색을 선택해주세요',
+  'createStory.presets': '프리셋',
+  'createStory.customColor': '직접 입력',
+  'createStory.useImage': '사진으로 전환',
+  'createStory.useColor': '색상으로 전환',
+  'compose.choose': '무엇을 올릴까요?',
+  'compose.story': '스토리',
+  'compose.storyHint': '사진 위에 텍스트를 자유롭게',
+  'compose.post': '게시물',
+  'createStory.handleHint': '파란 핸들로 크기, 상단 핸들로 회전, X로 삭제',
+  'compose.postHint': '텍스트와 사진/동영상',
 
   // FeedView
   'feed.noPosts': '아직 게시물이 없습니다',
@@ -52,7 +57,9 @@ export const ko = {
   // MyPage
   'myPage.failed': '게시물을 불러오지 못했습니다',
   'myPage.retry': '다시 시도',
-  'myPage.tagline': 'Alone, but not lonely',
+  'myPage.statusDefault': 'Alone, but not lonely',
+  'myPage.statusEditHint': '탭해서 상태 메시지 추가',
+  'myPage.statusEditFailed': '상태 메시지 저장에 실패했습니다',
   'myPage.myPosts': '내 게시물',
   'myPage.new': '새 글',
   'myPage.noPosts': '아직 게시물이 없습니다',
@@ -72,6 +79,7 @@ export const ko = {
   // SettingsModal
   'settings.title': '설정',
   'settings.displayName': '표시 이름',
+  'settings.statusMessage': '상태 메시지',
   'settings.planet': '행성',
   'settings.language': '언어',
   'settings.logout': '로그아웃',
@@ -108,9 +116,16 @@ export const ko = {
   'notification.resonance': '누군가와 공명했습니다',
   'notification.resonanceDescription': '두 우주가 잠시 겹쳤습니다',
 
-  // PlanetSelector
-  'planetSelector.title': '나의 행성 선택',
-  'planetSelector.subtitle': '오직 나만 볼 수 있는 우주 아이덴티티입니다',
+  // RerollModal (행성 뽑기)
+  'reroll.title': '나의 행성',
+  'reroll.subtitle': '뽑기마다 새로운 행성이 태어납니다',
+  'reroll.current': '현재',
+  'reroll.new': '새 행성',
+  'reroll.reroll': '다시 뽑기',
+  'reroll.apply': '적용하기',
+  'reroll.applying': '적용 중…',
+  'reroll.applyFailed': '적용에 실패했습니다. 다시 시도해 주세요.',
+  'reroll.appliedHint': '적용하면 다른 사람에게도 즉시 보여요',
 
   // WorldPage
   'world.failed': '그래프를 불러오지 못했습니다',
@@ -182,6 +197,23 @@ export const ko = {
   'calendar.title': '달력',
   'calendar.today': '오늘',
   'calendar.noPostsThisDate': '이 날에 게시물이 없어요',
+
+  // Compose Choice Sheet
+  'compose.storyDetail': '사진 위에 텍스트·이모지·드로잉 자유 배치',
+  'compose.postDetail': '텍스트 + 사진/동영상 조합',
+
+  // MyPage Guest
+  'myPage.guestPreview': '로그인 후 이런 화면을 볼 수 있어요',
+
+  // Settings
+  'settings.myReports': '내 신고 내역',
+  'settings.myReportsComingSoon': '곧 지원',
+
+  // World
+  'world.loading': '그래프를 그리고 있어요...',
+
+  // Report
+  'report.confirmArmed': '정말 신고하시겠어요? 다시 눌러 확인',
 
   // General/Common
   'common.loading': '로딩 중...',

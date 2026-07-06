@@ -2,24 +2,20 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, AlignLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CreatePostModal } from '@/components/CreatePostModal';
+import { OverlayRenderer } from '@/components/OverlayRenderer';
 import { toast } from 'sonner';
 import { useI18n } from '@/i18n';
-import { useImageCropper } from '@/hooks/useImageCropper';
 import { cn } from '@/lib/utils';
 import type { Post } from '@/types';
-
 interface CalendarPageProps {
   posts: Post[];
-  view: 'month' | 'detail' | 'expanded';
-  onViewChange: (view: 'month' | 'detail' | 'expanded') => void;
+  view: 'month' | 'day' | 'post-detail';
+  onViewChange: (view: 'month' | 'day' | 'post-detail') => void;
   onDeletePost: (postId: string) => void;
-  onUpdatePost: (postId: string, opts: { content: string; mediaFile?: File }) => Promise<void>;
   onWritePost: () => void;
   onPostClick: (post: Post) => void;
   currentUserId: string;
 }
-
 const DAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 const DAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS_KO = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
@@ -51,18 +47,16 @@ function formatDateTime(dateStr: string, isKorean: boolean): string {
   return `${datePart} ${ampm} ${hour12}:${m}`;
 }
 
-export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdatePost, onWritePost, onPostClick, currentUserId }: CalendarPageProps) {
+export function CalendarPage({ posts, view, onViewChange, onDeletePost, onWritePost, onPostClick, currentUserId }: CalendarPageProps) {
   const { t, locale } = useI18n();
-  const { requestCrop, CropModal } = useImageCropper();
 
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-
   const isKorean = locale === 'ko';
+
   const DAYS = isKorean ? DAYS_KO : DAYS_EN;
   const MONTHS = isKorean ? MONTHS_KO : MONTHS_EN;
   const WEEKDAYS = isKorean ? WEEKDAYS_KO : WEEKDAYS_EN;
@@ -155,7 +149,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
 
   const handleDateClick = (day: number) => {
     setSelectedDate(new Date(currentYear, currentMonth, day));
-    onViewChange('detail');
+    onViewChange('day');
   };
 
   const handlePostClick = (post: Post) => {
@@ -166,16 +160,11 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
   const handleDelete = (postId: string) => {
     onDeletePost(postId);
     toast(t('myPage.deleted'), { duration: 2000 });
-    onViewChange('detail');
+    onViewChange('day');
     setSelectedPost(null);
   };
 
-  const handleEditSubmit = async (postId: string, opts: { content: string; mediaFile?: File }) => {
-    await onUpdatePost(postId, opts);
-    setEditModalOpen(false);
-    setSelectedPost(null);
-    onViewChange('detail');
-  };
+  // 캘린더는 열람/삭제만. 편집 흐름 제거됨 (legacy 피드 시스템 전체 삭제).
 
   const isToday = (day: number) =>
     day === today.getDate() &&
@@ -339,7 +328,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
                         <>
                           <div className="w-full h-full flex items-center justify-center rounded-lg px-1">
                             <span className="text-[11px] dark:text-gray-100 text-black leading-relaxed line-clamp-2 text-center truncate">
-                              {firstPost.content.slice(0, 8)}{firstPost.content.length > 8 ? '…' : ''}
+                              {firstPost.overlays?.[0]?.text?.slice(0, 8)}{(firstPost.overlays?.[0]?.text?.length ?? 0) > 8 ? '…' : ''}
                             </span>
                           </div>
                           {postCount > 1 && (
@@ -360,7 +349,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
     </div>
   );
 
-  const renderDetailView = () => {
+  const renderDayView = () => {
     if (!selectedDate) return null;
 
     const weekdayName = WEEKDAYS[selectedDate.getDay()];
@@ -457,7 +446,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 text-sm text-foreground/90">
-                    {post.content || (isKorean ? '미디어' : 'Media')}
+                    {post.overlays?.[0]?.text || (isKorean ? '미디어' : 'Media')}
                   </p>
                   {post.createdAt && (
                     <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -473,7 +462,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
     );
   };
 
-  const renderExpandedView = () => {
+  const renderPostDetailView = () => {
     if (!selectedPost) return null;
 
     return (
@@ -519,7 +508,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
         {/* Content */}
         <div className="flex flex-1 justify-center overflow-y-auto">
           <div className="w-full max-w-[400px]">
-            {selectedPost.media && (
+            {selectedPost.media ? (
               <div className="mb-3 overflow-hidden rounded-xl bg-muted">
                 {selectedPost.mediaType === 'video' ? (
                   <video
@@ -536,26 +525,28 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
                     draggable={false}
                   />
                 )}
+                {selectedPost.overlays && selectedPost.overlays.length > 0 && (
+                  <div className="aspect-[4/5] w-full relative -mt-[100%] pointer-events-none">
+                    <OverlayRenderer overlays={selectedPost.overlays} />
+                  </div>
+                )}
               </div>
+            ) : selectedPost.bgColor ? (
+              <div
+                className="mb-3 aspect-[4/5] w-full rounded-xl relative overflow-hidden"
+                style={{ background: selectedPost.bgColor }}
+              >
+                {selectedPost.overlays && selectedPost.overlays.length > 0 && (
+                  <OverlayRenderer overlays={selectedPost.overlays} />
+                )}
+              </div>
+            ) : null}
+            {selectedPost.overlays && selectedPost.overlays.length > 0 && !selectedPost.media && !selectedPost.bgColor && (
+              <OverlayRenderer overlays={selectedPost.overlays} />
             )}
-            {selectedPost.content && (
-              <p className="whitespace-pre-wrap text-[15px] leading-[1.6] text-foreground/90">
-                {selectedPost.content}
-              </p>
-            )}
-
             {/* Action buttons */}
             {selectedPost?.authorId === currentUserId && (
               <div className="mt-4 flex items-center justify-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditModalOpen(true)}
-                  className="gap-1.5 flex-1 border-accent/30 hover:bg-accent/10"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {isKorean ? '수정' : 'Edit'}
-                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -569,15 +560,6 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
             )}
           </div>
         </div>
-
-        <CreatePostModal
-          open={editModalOpen}
-          onOpenChange={setEditModalOpen}
-          onSubmit={async () => {}}
-          requestImageCrop={requestCrop}
-          editPost={selectedPost}
-          onEdit={handleEditSubmit}
-        />
       </div>
     );
   };
@@ -587,11 +569,10 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onUpdate
       <div className="mx-auto flex h-full w-full max-w-[640px] flex-col px-3 py-4 sm:px-5 sm:py-5">
         <div className="flex-1 min-h-0 overflow-hidden">
           {view === 'month' && renderMonthView()}
-          {view === 'detail' && renderDetailView()}
-          {view === 'expanded' && renderExpandedView()}
+          {view === 'day' && renderDayView()}
+          {view === 'post-detail' && renderPostDetailView()}
         </div>
       </div>
-      {CropModal}
     </div>
   );
 }

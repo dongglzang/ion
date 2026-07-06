@@ -4,7 +4,9 @@ import { useClient } from '@/hooks/ClientProvider';
 import { useDeviceSize, getCardCountForViewport, getDynamicCardSize } from '@/hooks/useDeviceSize';
 import type { Post } from '@/types';
 
-const TOP_OFFSET = 72;
+// 피드 카드 상단 오프셋 = 헤더(56 mobile / 64 sm) + 항성계 오비트 스트립(64) + 여백.
+// 카드가 스트립과 겹치지 않고 스트립 아래에 깔리도록(getBounds minY).
+const TOP_OFFSET = 136;
 const MAX_VELOCITY = 20;
 const FRICTION = 0.9985;
 const MIN_SPEED = 1.5;
@@ -43,11 +45,21 @@ export function FeedPhysics({ posts }: FeedPhysicsProps) {
   const zoomLevelRef = useRef(zoomLevel);
   const widthRef = useRef(width);
   const lastDismissRef = useRef<{ x: number; y: number } | null>(null);
+  // 매 프레임 getComputedStyle → style invalidation 회피.
+  // 테마 변경 시 1회만 재계산.
+  const bgVarRef = useRef<string>(
+    getComputedStyle(document.documentElement).getPropertyValue('--background').trim()
+  );
 
   useEffect(() => { isDarkModeRef.current = isDarkMode; }, [isDarkMode]);
   useEffect(() => { postsRef.current = posts; }, [posts]);
   useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
   useEffect(() => { widthRef.current = width; }, [width]);
+  useEffect(() => {
+    // 테마 전환 시 --background 가 바뀜 → 1회 fetch.
+    bgVarRef.current = getComputedStyle(document.documentElement)
+      .getPropertyValue('--background').trim();
+  }, [theme]);
 
   useEffect(() => {
     if (posts.length === 0) {
@@ -121,13 +133,10 @@ export function FeedPhysics({ posts }: FeedPhysicsProps) {
     initNodes(canvas);
 
     const animate = () => {
-      const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
       if (!ctx) return;
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const bgVar = getComputedStyle(document.documentElement)
-        .getPropertyValue('--background')
-        .trim();
+      const bgVar = bgVarRef.current;
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, `oklch(${bgVar})`);
       gradient.addColorStop(1, `oklch(${bgVar})`);

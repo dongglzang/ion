@@ -1,3 +1,4 @@
+import type { Overlay } from '@/types';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
@@ -19,22 +20,37 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export interface Profile {
   id: string;
   display_name: string;
-  planet: string;
+  planet_seed: number;
   email: string | null;
+  status_message: string | null;
   created_at: string;
 }
 
 export interface FeedRow {
   id: string;
   author_id: string;
-  content: string;
+  bg_color?: string | null;
   media_url: string | null;
   media_type: 'image' | 'video' | null;
-  text_overlay?: 'white' | 'black' | 'color' | null;
-  text_color?: string | null;
+  overlays?: unknown[] | null;
   created_at: string;
   author_display_name: string;
-  author_planet: string;
+  author_planet_seed: number;
+  system_id: string;
+  system_slug: string;
+  system_name: string;
+}
+
+
+export interface SystemRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  palette: string[];
+  creator_id: string | null;
+  is_default: boolean;
+  created_at: string;
 }
 
 export interface ResonanceRow {
@@ -68,21 +84,22 @@ export async function signOut(): Promise<void> {
 }
 
 export function onAuthStateChange(
-  callback: (user: { id: string; display_name: string; planet: string } | null) => void,
+  callback: (user: { id: string; display_name: string; planet_seed: number; status_message: string | null } | null) => void,
 ) {
   return supabase.auth.onAuthStateChange(async (_event, session) => {
     if (!session?.user) return callback(null);
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, display_name, planet')
+      .select('id, display_name, planet_seed, status_message')
       .eq('id', session.user.id)
       .single();
 
     callback({
       id: session.user.id,
       display_name: profile?.display_name ?? session.user.user_metadata?.full_name ?? 'Anonymous',
-      planet: profile?.planet ?? 'moon',
+      planet_seed: (profile?.planet_seed ?? 0) >>> 0,
+      status_message: profile?.status_message ?? null,
     });
   });
 }
@@ -94,7 +111,7 @@ export function onAuthStateChange(
 export async function getProfile(userId: string): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, display_name, planet, email, created_at')
+    .select('id, display_name, planet_seed, email, status_message, created_at')
     .eq('id', userId)
     .single();
   if (error) throw error;
@@ -105,8 +122,17 @@ export function updateDisplayName(userId: string, name: string) {
   return supabase.from('profiles').update({ display_name: name }).eq('id', userId);
 }
 
-export function updatePlanet(userId: string, planet: string) {
-  return supabase.from('profiles').update({ planet }).eq('id', userId);
+export function updatePlanetSeed(userId: string, planetSeed: number) {
+  return supabase.from('profiles').update({ planet_seed: (planetSeed >>> 0) }).eq('id', userId);
+}
+
+/** Empty string clears the user's status and falls back to the default slogan. */
+export function updateStatusMessage(userId: string, statusMessage: string) {
+  const trimmed = statusMessage.trim();
+  return supabase
+    .from('profiles')
+    .update({ status_message: trimmed.length === 0 ? null : trimmed })
+    .eq('id', userId);
 }
 
 // ============================================
@@ -137,19 +163,23 @@ export async function uploadMedia(
 
 export async function createPost(opts: {
   author_id: string;
-  content: string;
+  bg_color?: string;
   media_url?: string;
   media_type?: 'image' | 'video';
+  system_id: string;
+  overlays?: Overlay[];
 }) {
   const { data, error } = await supabase
     .from('posts')
     .insert({
       author_id: opts.author_id,
-      content: opts.content,
+      bg_color: opts.bg_color ?? null,
       media_url: opts.media_url ?? null,
       media_type: opts.media_type ?? null,
+      system_id: opts.system_id,
+      overlays: opts.overlays ?? null,
     })
-    .select('id, author_id, content, media_url, media_type, created_at')
+    .select('id, author_id, bg_color, media_url, media_type, overlays, created_at')
     .single();
   if (error) throw error;
   return data;
@@ -158,13 +188,17 @@ export async function createPost(opts: {
 export async function getFeed(
   viewerId: string,
   batchSize = 10,
-  excludeIds: string[] = []
+  excludeIds: string[] = [],
+  systemId?: string | null,
 ): Promise<FeedRow[]> {
   const { data, error } = await supabase.rpc('feed_random', {
-    // 비로그인(anon) 호출 허용 — feed_random은 viewer_id가 NULL이면 자기 글 제외를 건너뛴다.
+    // 비로그인(anon) 허용 — viewer_id NULL이면 자기 글 제외 생략.
+    // filter_system_id: NULL=전역(모든 항성계 합집합), 특정 uuid=해당 항성계만.
+    // (컬럼 p.system_id 와의 섀도잉 방지로 파라미터명이 filter_system_id 임)
     viewer_id: viewerId || null,
     batch_size: batchSize,
     exclude_ids: excludeIds,
+    filter_system_id: systemId ?? null,
   });
   if (error) throw error;
   return data ?? [];
@@ -174,9 +208,11 @@ export async function getUserPosts(userId: string): Promise<FeedRow[]> {
   const { data, error } = await supabase
     .from('posts')
     .select(`
-      id, author_id, content, media_url, media_type, created_at,
+      id, author_id, bg_color, media_url, media_type, overlays, created_at, system_id,
       author_display_name:profiles!posts_author_id_fkey(display_name),
-      author_planet:profiles!posts_author_id_fkey(planet)
+      author_planet_seed:profiles!posts_author_id_fkey(planet_seed),
+      system_slug:systems!posts_system_id_fkey(slug),
+      system_name:systems!posts_system_id_fkey(name)
     `)
     .eq('author_id', userId)
     .order('created_at', { ascending: false })
@@ -186,36 +222,72 @@ export async function getUserPosts(userId: string): Promise<FeedRow[]> {
   return (data ?? []).map((p: Record<string, unknown>) => ({
     id: p.id as string,
     author_id: p.author_id as string,
-    content: p.content as string,
+    bg_color: p.bg_color as string | null | undefined,
     media_url: p.media_url as string | null,
     media_type: p.media_type as 'image' | 'video' | null,
-    text_overlay: p.text_overlay as 'white' | 'black' | 'color' | null | undefined,
-    text_color: p.text_color as string | null | undefined,
+    overlays: p.overlays as unknown[] | null | undefined,
     created_at: p.created_at as string,
     author_display_name: ((p.author_display_name as { display_name: string }[])?.[0]?.display_name) ?? '',
-    author_planet: ((p.author_planet as { planet: string }[])?.[0]?.planet) ?? 'moon',
+    author_planet_seed: ((p.author_planet_seed as { planet_seed: number }[])?.[0]?.planet_seed ?? 0) >>> 0,
+    system_id: p.system_id as string,
+    system_slug: ((p.system_slug as { slug: string }[])?.[0]?.slug) ?? '',
+    system_name: ((p.system_name as { name: string }[])?.[0]?.name) ?? '',
   }));
 }
 
-export async function updatePost(postId: string, opts: { content?: string; media_url?: string | null; media_type?: 'image' | 'video' | null }) {
+// ============================================
+// Systems (항성계)
+// ============================================
+
+export async function listSystems(): Promise<SystemRow[]> {
   const { data, error } = await supabase
-    .from('posts')
-    .update({
-      content: opts.content ?? null,
-      media_url: opts.media_url ?? null,
-      media_type: opts.media_type ?? null,
+    .from('systems')
+    .select('id, slug, name, description, palette, creator_id, is_default, created_at')
+    .order('is_default', { ascending: false }) // 기본 항성계 먼저
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getSystemBySlug(slug: string): Promise<SystemRow | null> {
+  const { data, error } = await supabase
+    .from('systems')
+    .select('id, slug, name, description, palette, creator_id, is_default, created_at')
+    .eq('slug', slug)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function createSystem(opts: {
+  slug: string;
+  name: string;
+  description?: string;
+  palette: string[];
+  creator_id: string;
+}): Promise<SystemRow> {
+  const { data, error } = await supabase
+    .from('systems')
+    .insert({
+      slug: opts.slug,
+      name: opts.name,
+      description: opts.description ?? null,
+      palette: opts.palette,
+      creator_id: opts.creator_id,
     })
-    .eq('id', postId)
-    .select('id, author_id, content, media_url, media_type, created_at')
+    .select('id, slug, name, description, palette, creator_id, is_default, created_at')
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function deletePost(postId: string) {
+export async function deletePost(postId: string, userId: string) {
+  // 호출 측(useDeletePost)이 userId 컨텍스트를 이미 알고 있음.
+  // 매 삭제마다 supabase.auth.getUser() 호출 → 토큰 검증 + RLS user_id 추출
+  // (불필요). 직접 eq 필터 + RLS 가 이중 방어.
   const { error } = await supabase.from('posts').delete()
     .eq('id', postId)
-    .eq('author_id', (await supabase.auth.getUser()).data.user?.id ?? '');
+    .eq('author_id', userId);
   if (error) throw error;
 }
 
@@ -353,53 +425,17 @@ export async function markAllResonancesSeen(userId: string) {
 }
 
 export async function checkAndCreateResonance(userId: string, likedPostId: string) {
-  // Get the author of the liked post
-  const { data: likedPost } = await supabase
-    .from('posts')
-    .select('author_id')
-    .eq('id', likedPostId)
-    .single();
-  if (!likedPost || likedPost.author_id === userId) return null;
-
-  const otherUserId = likedPost.author_id;
-
-  // Check if the other user already liked one of my posts
-  const { data: myPosts } = await supabase
-    .from('posts')
-    .select('id')
-    .eq('author_id', userId)
-    .limit(1);
-  if (!myPosts || myPosts.length === 0) return null;
-
-  // Check if other user liked any of my posts
-  const { data: mutualLike } = await supabase
-    .from('likes')
-    .select('post_id')
-    .eq('user_id', otherUserId)
-    .in('post_id', myPosts.map(p => p.id))
-    .limit(1);
-  if (!mutualLike || mutualLike.length === 0) return null;
-
-  // Check if resonance already exists
-  const { data: existing } = await supabase
-    .from('resonances')
-    .select('id')
-    .or(`and(user_a.eq.${userId},user_b.eq.${otherUserId}),and(user_a.eq.${otherUserId},user_b.eq.${userId})`)
-    .limit(1);
-  if (existing && existing.length > 0) return null;
-
-  // Create resonance
-  const myPostId = mutualLike[0].post_id;
-  const { data: resonance, error } = await supabase
-    .from('resonances')
-    .insert({
-      user_a: userId,
-      user_b: otherUserId,
-      post_a: myPostId,
-      post_b: likedPostId,
-    })
-    .select('id, user_a, user_b, post_a, post_b, seen, created_at')
-    .single();
-  if (error) throw error;
-  return resonance;
+  // 단일 RPC로 통합 — 5 RTT → 1 RTT.
+  // 서버에서 auth.uid() == userId 검증 + ON CONFLICT race 차단.
+  // RLS INSERT 정책이 없으므로 SECURITY DEFINER가 필수.
+  const { data, error } = await supabase.rpc('check_and_create_resonance', {
+    p_user_id: userId,
+    p_liked_post_id: likedPostId,
+  });
+  if (error) {
+    // 42501 = insufficient_privilege (user_id mismatch) — 위조 시도, 호출자에게 노출하지 않음
+    if (error.code === '42501') return null;
+    throw error;
+  }
+  return data?.[0] ?? null;
 }

@@ -5,7 +5,7 @@ import { ZoomSlider } from '@/components/ZoomSlider';
 
 export function WorldRoute() {
   const { user } = useAuth();
-  const currentUserPlanet = user?.planet ?? 'moon';
+  const currentUserPlanetSeed = (user?.planetSeed ?? 0) >>> 0;
   const userId = user?.id ?? '';
 
   const worldQuery = useWorldGraphQuery(userId);
@@ -16,7 +16,7 @@ export function WorldRoute() {
         posts={worldQuery.data?.posts ?? []}
         connections={worldQuery.data?.connections ?? []}
         currentUserId={userId}
-        currentUserPlanet={currentUserPlanet}
+        currentUserPlanetSeed={currentUserPlanetSeed}
         isLoading={worldQuery.isLoading}
         isError={worldQuery.isError}
         onRetry={() => worldQuery.refetch()}

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/hooks/AuthProvider';
 import { useMyPostsQuery, useCreatePost, useDeletePost } from '@/hooks/queries/useMyPosts';
-import { useUpdateProfile, useUpdatePlanet } from '@/hooks/queries/useProfile';
+import { useSystems } from '@/hooks/queries/useSystems';
+import { useUpdateProfile, useUpdatePlanetSeed, useUpdateStatusMessage } from '@/hooks/queries/useProfile';
 import { MyPage as MyPageComponent } from '@/components/MyPage';
 import { LoginModal } from '@/components/LoginModal';
 import { Button } from '@/components/ui/button';
@@ -13,19 +14,23 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { LogIn, ArrowLeft } from 'lucide-react';
 import { deleteAccount } from '@/lib/supabase';
-import type { PlanetKey } from '@/constants/planets';
 
 export function MyPageRoute() {
-  const { user, logout, setPlanet, setDisplayName } = useAuth();
+  const { t } = useI18n();
+  const { user, logout, setPlanetSeed, setDisplayName, setStatusMessage } = useAuth();
   const userId = user?.id ?? '';
   const authorName = user?.displayName ?? '';
-  const authorPlanet = user?.planet ?? 'moon';
+  const authorPlanetSeed = (user?.planetSeed ?? 0) >>> 0;
+  const userStatusMessage = user?.statusMessage ?? null;
 
   const { data: posts = [], isLoading, isError, refetch } = useMyPostsQuery(userId);
   const { mutateAsync: createPostMutate } = useCreatePost(userId, authorName);
   const { mutate: deletePostMutate } = useDeletePost(userId);
   const { mutateAsync: updateProfileMutate } = useUpdateProfile(userId);
-  const { mutateAsync: updatePlanetMutate } = useUpdatePlanet(userId);
+  const { mutateAsync: updatePlanetSeedMutate } = useUpdatePlanetSeed(userId);
+  const { mutateAsync: updateStatusMutate } = useUpdateStatusMessage(userId);
+  const { data: systems = [] } = useSystems();
+  const defaultSystemId = systems.find((s) => s.isDefault)?.id ?? '';
 
   const { requestCrop, CropModal } = useImageCropper();
 
@@ -43,9 +48,20 @@ export function MyPageRoute() {
     setDisplayName(name);
   };
 
-  const handleChangePlanet = async (planet: PlanetKey) => {
-    await updatePlanetMutate(planet);
-    setPlanet(planet);
+  const handleChangePlanetSeed = async (seed: number) => {
+    await updatePlanetSeedMutate(seed);
+    setPlanetSeed(seed);
+  };
+
+  const handleChangeStatusMessage = async (next: string | null) => {
+    try {
+      await updateStatusMutate(next ?? '');
+      setStatusMessage(next);
+    } catch (err) {
+      console.error('Failed to update status message:', err);
+      toast.error(t('myPage.statusEditFailed') || 'Failed to update status');
+      throw err;
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -54,16 +70,16 @@ export function MyPageRoute() {
     try {
       await deleteAccount(userId);
       await logout();
-      toast('탈퇴되었습니다', { duration: 2000 });
+      toast(t('myPageRoute.accountDeleted'), { duration: 2000 });
     } catch (err) {
       console.error('Account deletion failed:', err);
-      toast('탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.', { duration: 3000 });
+      toast(t('myPageRoute.deleteFailed'), { duration: 3000 });
       setDeletingAccount(false);
     }
   };
 
   // 비로그인은 마이페이지 대신 로그인 유도 게이트를 보여준다.
-  // 페이지 진입 자체는 허용하되, 여기서 모든 인터랕션을 로그인으로 유도한다.
+  // 페이지 진입 자체는 허용하되, 여기서 모든 인터랙션을 로그인으로 유도한다.
   if (!user) {
     return <GuestGate />;
   }
@@ -72,23 +88,26 @@ export function MyPageRoute() {
     <>
       <MyPageComponent
         posts={posts}
+        userId={userId}
         userName={authorName}
-        userPlanet={authorPlanet as PlanetKey}
+        userPlanetSeed={authorPlanetSeed}
+        userStatusMessage={userStatusMessage}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
         onLogout={handleLogout}
         onDeleteAccount={handleDeleteAccount}
-        onCreatePost={async (opts) => { await createPostMutate(opts); }}
+        onCreatePost={async (opts) => { await createPostMutate({ ...opts, systemId: defaultSystemId }); }}
         onDeletePost={(postId) => { deletePostMutate(postId); }}
         onChangeName={handleChangeName}
-        onChangePlanet={handleChangePlanet}
+        onChangePlanetSeed={handleChangePlanetSeed}
+        onChangeStatusMessage={handleChangeStatusMessage}
         requestImageCrop={requestCrop}
       />
       {CropModal}
       {logoutToast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 bg-card border border-border/50 rounded-xl text-sm text-foreground shadow-lg z-[600]">
-          Logged out
+          {t('myPageRoute.loggedOut')}
         </div>
       )}
     </>
@@ -112,7 +131,7 @@ function GuestGate() {
         >
           <div className="absolute inset-0 bg-accent/10 rounded-full blur-2xl" />
           <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-card border border-border/50 flex items-center justify-center">
-            <PlanetAvatar planet="moon" size={64} showGlow className="opacity-40" />
+            <PlanetAvatar planetSeed={0} size={64} showGlow className="opacity-40" />
           </div>
         </motion.div>
         <motion.h1
@@ -132,10 +151,25 @@ function GuestGate() {
           {t('myPage.guestDesc')}
         </motion.p>
         <motion.div
+          className="mt-10 mb-8"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18 }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60 mb-3 text-center">
+            {t('myPage.guestPreview')}
+          </p>
+          <div className="grid grid-cols-3 gap-1 max-w-[400px] mx-auto filter blur-[2px] opacity-60 pointer-events-none select-none" aria-hidden>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="aspect-square rounded-md bg-muted/40 border border-border/30" />
+            ))}
+          </div>
+        </motion.div>
+        <motion.div
           className="flex flex-col items-center gap-2 mt-6"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
+          transition={{ delay: 0.22 }}
         >
           <Button
             onClick={() => setLoginOpen(true)}

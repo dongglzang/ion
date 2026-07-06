@@ -1,7 +1,7 @@
 import { FeedPhysics } from './FeedPhysics';
 import { FeedCards } from './FeedCards';
 import { EmptyFeedState } from '@/components/EmptyFeedState';
-import type { Post } from '@/types';
+import type { Post, System } from '@/types';
 
 interface FeedViewProps {
   posts: Post[];
@@ -12,6 +12,8 @@ interface FeedViewProps {
   onRefetch: () => void;
   likedIds?: string[];
   onToggleLike?: (postId: string) => void;
+  /** systemId → System 매핑. FeedRoute에서 useSystems 1회 결과를 전달. */
+  systemsById?: Map<string, System>;
 }
 
 export function FeedView(props: FeedViewProps) {
@@ -29,7 +31,13 @@ export function FeedView(props: FeedViewProps) {
         expandedPostId={props.expandedPostId}
         likedIds={props.likedIds}
         onToggleLike={props.onToggleLike}
+        systemsById={props.systemsById}
       />
+      <div className="pointer-events-none fixed bottom-6 left-0 right-0 z-10 flex justify-center">
+        <span className="px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-md border border-border/40 text-[11px] text-muted-foreground shadow-sm">
+          ↑ 위 · ← 제외 · ♡ 좋아요
+        </span>
+      </div>
     </div>
   );
 }

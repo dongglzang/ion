@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2 } from 'lucide-react';
 import type { Post } from '@/types';
-import { CollageOverlay } from '@/components/CollageOverlay';
-
+import { OverlayRenderer } from '@/components/OverlayRenderer';
 interface MyPostDetailProps {
   post: Post | null;
   onClose: () => void;
@@ -90,22 +89,24 @@ export function MyPostDetail({ post, onClose, onDelete, isDeleting }: MyPostDeta
                     draggable={false}
                   />
                 )}
-                {post.content && (
-                  <CollageOverlay
-                    text={post.content}
-                    color={post.textOverlay}
-                    customColor={post.textColor}
-                    fontSize={18}
-                  />
+                {post.overlays && post.overlays.length > 0 && (
+                  <OverlayRenderer overlays={post.overlays} />
                 )}
               </>
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center p-8">
-                <p className="text-[18px] leading-[1.55] text-foreground text-center whitespace-pre-wrap break-words max-w-[36ch]">
-                  {post.content}
-                </p>
+            ) : post.bgColor ? (
+              <div
+                className="absolute inset-0"
+                style={{ background: post.bgColor }}
+              >
+                {post.overlays && post.overlays.length > 0 && (
+                  <OverlayRenderer overlays={post.overlays} />
+                )}
               </div>
-            )}
+            ) : post.overlays && post.overlays.length > 0 ? (
+              <div className="absolute inset-0 flex items-center justify-center p-8">
+                <OverlayRenderer overlays={post.overlays} />
+              </div>
+            ) : null}
 
             {/* 닫기 — 우상단 */}
             <motion.button
