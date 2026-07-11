@@ -12,7 +12,9 @@ interface PostCardProps {
   isLiked: boolean;
   /** 부모에서 1회 fetch한 system 캐시. 카드가 5~15개 동시 렌더 시 useSystems() 중복 호출 제거. */
   system?: System;
-  onClick: () => void;
+  /** 클릭 시 positionStore에서 직접 read한 현재 위치를 함께 전달.
+   *  FeedCards의 render 시점에 capture된 stale rect를 피하기 위함. */
+  onClick: (rect: { x: number; y: number; size: number }) => void;
   onToggleLike: () => void;
   onDelete?: () => void;
 }
@@ -280,8 +282,10 @@ export const PostCard = memo(function PostCard({
         positionStore.setDeleteMode(null);
         onDelete?.();
       } else {
-        // 클릭 (이동 없음)
-        onClick();
+        // 클릭 (이동 없음). 현재 위치는 mount 시점이 아니라 클릭 시점에 read.
+        // FeedCards의 render 시점에 capture된 stale rect 회피.
+        const clickPos = positionStore.getPosition(post.id);
+        if (clickPos) onClick({ x: clickPos.x, y: clickPos.y, size: clickPos.size });
       }
 
       dragStartRef.current = null;

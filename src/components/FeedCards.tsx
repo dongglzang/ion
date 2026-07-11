@@ -71,9 +71,7 @@ export function FeedCards({
             size={size}
             isLiked={likedSet.has(post.id)}
             system={post.systemId ? systemsById?.get(post.systemId) : undefined}
-            onClick={() => {
-              if (pos && clickHandler) clickHandler({ x: pos.x, y: pos.y, size: pos.size });
-            }}
+            onClick={clickHandler ?? noop}
             onToggleLike={toggleHandler}
             onDelete={deleteHandler}
           />
