@@ -1,4 +1,4 @@
-import { useSyncExternalStore, useCallback, useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { Post, System } from '@/types';
 import { positionStore } from '@/stores/positionStore';
 import { PostCard } from './PostCard';
@@ -16,57 +16,71 @@ interface FeedCardsProps {
   expandedPostId?: string | null;
   likedIds?: string[];
   onToggleLike?: (postId: string) => void;
-  /** systemId → System 매핑. 부모에서 useSystems() 1회 호출 결과를 전달. */
   systemsById?: Map<string, System>;
 }
 
-export function FeedCards({ posts, onCardClick, onDelete, expandedPostId, likedIds = [], onToggleLike, systemsById }: FeedCardsProps) {
-  const positions = useSyncExternalStore(
-    positionStore.subscribe,
-    positionStore.getSnapshot
-  );
-  const deleteModeId = positions.length > 0 ? positionStore.getDeleteModeId() : null;
-
-  const handleDelete = useCallback((posId: string) => {
-    onDelete(posId);
-    positionStore.setDeleteMode(null);
+/**
+ * v2: ref-driven. 60Hz re-render storm 제거.
+ *
+ * - useSyncExternalStore 제거. PostCard는 mount/unmount만.
+ * - PostCard가 자기 containerRef를 positionStore에 등록, rAF가 직접 transform set.
+ * - dismiss는 subscribePendingDelete 이벤트로 받음.
+ */
+export function FeedCards({
+  posts,
+  onCardClick,
+  onDelete,
+  expandedPostId,
+  likedIds = [],
+  onToggleLike,
+  systemsById,
+}: FeedCardsProps) {
+  useEffect(() => {
+    return positionStore.subscribePendingDelete((id) => {
+      onDelete(id);
+    });
   }, [onDelete]);
 
-  // edge-drag dismiss 감시 (FeedPhysics가 처리 완료 후 notify → 여기서 onDelete)
-  useEffect(() => {
-    const id = positionStore.consumePendingDataDelete();
-    if (id) onDelete(id);
-  });
+  const likedSet = useMemo(() => new Set(likedIds), [likedIds]);
 
-  if (positions.length === 0) return null;
+  const handlers = useMemo(() => {
+    const click = new Map<string, (rect: CardPosition) => void>();
+    const toggle = new Map<string, () => void>();
+    const del = new Map<string, () => void>();
+    for (const post of posts) {
+      click.set(post.id, (rect) => onCardClick(post, rect));
+      toggle.set(post.id, () => onToggleLike?.(post.id));
+      del.set(post.id, () => onDelete(post.id));
+    }
+    return { click, toggle, del };
+  }, [posts, onCardClick, onToggleLike, onDelete]);
 
   return (
     <div className="fixed inset-0 select-none z-20">
-      {positions.map((pos) => {
-        const post = posts.find((p) => p.id === pos.id);
-        if (!post) return null;
-
-        // 확장 모달로 열린 카드는 캔버스에서 숨김 (모달과 이중 표시 방지).
-        if (expandedPostId && pos.id === expandedPostId) return null;
-
+      {posts.map((post) => {
+        if (expandedPostId && post.id === expandedPostId) return null;
+        const pos = positionStore.getPosition(post.id);
+        const size = pos?.size;
+        const clickHandler = handlers.click.get(post.id);
+        const toggleHandler = handlers.toggle.get(post.id) ?? noop;
+        const deleteHandler = handlers.del.get(post.id) ?? noop;
         return (
           <PostCard
-            key={pos.id}
+            key={post.id}
             post={post}
-            x={pos.x}
-            y={pos.y}
-            size={pos.size}
-            opacity={pos.opacity}
-            isDragging={pos.isDragging}
-            isDeleteMode={deleteModeId === pos.id}
-            isLiked={likedIds.includes(post.id)}
+            size={size}
+            isLiked={likedSet.has(post.id)}
             system={post.systemId ? systemsById?.get(post.systemId) : undefined}
-            onClick={() => onCardClick(post, { x: pos.x, y: pos.y, size: pos.size })}
-            onToggleLike={() => onToggleLike?.(post.id)}
-            onDelete={() => handleDelete(pos.id)}
+            onClick={() => {
+              if (pos && clickHandler) clickHandler({ x: pos.x, y: pos.y, size: pos.size });
+            }}
+            onToggleLike={toggleHandler}
+            onDelete={deleteHandler}
           />
         );
       })}
     </div>
   );
 }
+
+function noop() {}
