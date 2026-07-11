@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { imageSrcSet, sizesAttr, transformUrl } from '@/lib/imageUrl';
 import { CreateStoryModal } from '@/components/CreateStoryModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -200,10 +201,13 @@ export function MyPage({
                     </>
                   ) : (
                     <img
-                      src={post.media}
+                      src={transformUrl(post.media, 640)}
+                      srcSet={imageSrcSet(post.media, { widths: [160, 320, 640, 960] })}
+                      sizes={sizesAttr(300)}
                       alt=""
                       className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       loading="lazy"
+                      decoding="async"
                       draggable={false}
                     />
                   )

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { imageSrcSet, sizesAttr, transformUrl } from '@/lib/imageUrl';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, AlignLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -302,6 +303,7 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onWriteP
                             src={firstPost.media}
                             className="w-full h-full object-cover rounded-lg"
                             muted
+                            playsInline
                             preload="metadata"
                           />
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg">
@@ -313,9 +315,13 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onWriteP
                       ) : firstPost.media ? (
                         <>
                           <img
-                            src={firstPost.media}
+                            src={transformUrl(firstPost.media, 160)}
+                            srcSet={imageSrcSet(firstPost.media, { widths: [80, 160, 320] })}
+                            sizes={sizesAttr(160)}
                             alt=""
                             className="w-full h-full object-cover rounded-lg"
+                            loading="lazy"
+                            decoding="async"
                             draggable={false}
                           />
                           {postCount > 1 && (
@@ -428,13 +434,18 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onWriteP
                         src={post.media}
                         className="h-full w-full object-cover"
                         muted
+                        playsInline
                         preload="metadata"
                       />
                     ) : (
                       <img
-                        src={post.media}
+                        src={transformUrl(post.media, 160)}
+                        srcSet={imageSrcSet(post.media, { widths: [56, 112, 224] })}
+                        sizes={sizesAttr(56)}
                         alt=""
                         className="h-full w-full object-cover"
+                        loading="lazy"
+                        decoding="async"
                         draggable={false}
                       />
                     )}
@@ -515,13 +526,17 @@ export function CalendarPage({ posts, view, onViewChange, onDeletePost, onWriteP
                     src={selectedPost.media}
                     className="aspect-[4/5] w-full object-cover"
                     controls
+                    muted
                     playsInline
+                    preload="metadata"
                   />
                 ) : (
                   <img
                     src={selectedPost.media}
                     alt=""
                     className="aspect-[4/5] w-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     draggable={false}
                   />
                 )}
