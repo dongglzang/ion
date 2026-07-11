@@ -32,6 +32,14 @@ interface PostCardProps {
  * - 드래그 좌표는 PostCard의 setPointerCapture + onPointerMove가
  *   positionStore.setDragPos (non-notifying)로 직접 push. 다음 rAF tick이
  *   그 좌표를 읽어 자기 transform에 반영.
+ * - hover-only UI (날짜/좋아요 버튼): CSS group-hover/group-focus-within + 모바일
+ *   fallback [@media(hover:none)]:!opacity-100. React state 안 쓰므로 hover
+ *   enter/leave에 PostCard reconcile 안 일어남 (memo 유지).
+ *   onPointerEnter/Leave는 physics용으로 이미 존재.
+ * - 행성 avatar: 좌측 상단 (top-1.5 left-1.5). System badge가 있으면
+ *   System 정보 우선 (avatar가 badge와 같은 자리에서 z-10으로 위에 렌더).
+ *   사용자가 명시적으로 "행성 좌측 상단" 요청. pointer-events-none으로
+ *   click은 통과.
  */
 export const PostCard = memo(function PostCard({
   post,
@@ -182,7 +190,6 @@ export const PostCard = memo(function PostCard({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      // 좋아요 버튼 클릭이 포인터 이벤트를 가로채면 카드 드래그 시작 안 함
       const target = e.target as HTMLElement;
       if (target.closest('button, a, [role="button"]')) return;
       if (e.button !== 0) return;
@@ -197,7 +204,6 @@ export const PostCard = memo(function PostCard({
 
       clearLongPress();
       longPressTimerRef.current = window.setTimeout(() => {
-        // 350ms 누름 → 삭제 모드 진입 (long-press). 드래그 시작 안 함.
         longPressTimerRef.current = null;
         positionStore.setDeleteMode(post.id);
       }, 350);
@@ -224,12 +230,10 @@ export const PostCard = memo(function PostCard({
       }
 
       if (hasMovedRef.current) {
-        // 비-notifying 직접 쓰기. rAF가 다음 frame에서 읽어감.
         const newX = e.clientX - dragOffsetRef.current.x;
         const newY = e.clientY - dragOffsetRef.current.y;
         positionStore.setDragPos(post.id, newX, newY);
 
-        // velocity 계산 (10ms 간격)
         const now = Date.now();
         if (prevDragRef.current) {
           const dt = now - prevDragRef.current.time;
@@ -241,7 +245,6 @@ export const PostCard = memo(function PostCard({
         }
         prevDragRef.current = { x: e.clientX, y: e.clientY, time: now };
 
-        // 가장자리 감지 (release 시 dismiss 트리거용)
         const w = window.innerWidth;
         const h = window.innerHeight;
         if (newX < 60) nearEdgeRef.current = 'left';
@@ -275,7 +278,6 @@ export const PostCard = memo(function PostCard({
           else ddvy = 15;
           positionStore.markForDismissal(post.id, ddvx, ddvy);
         } else if (hasMovedRef.current) {
-          // 일반 release: 회전 리셋
           startRotationAnim(0);
         }
       } else if (isDeleteModeRef.current) {
@@ -283,7 +285,6 @@ export const PostCard = memo(function PostCard({
         onDelete?.();
       } else {
         // 클릭 (이동 없음). 현재 위치는 mount 시점이 아니라 클릭 시점에 read.
-        // FeedCards의 render 시점에 capture된 stale rect 회피.
         const clickPos = positionStore.getPosition(post.id);
         if (clickPos) onClick({ x: clickPos.x, y: clickPos.y, size: clickPos.size });
       }
@@ -365,25 +366,30 @@ export const PostCard = memo(function PostCard({
           />
         )}
 
-        {post.systemId && system && !system.isDefault && (
-          <span className="absolute top-1.5 left-1.5 z-10 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm">
-            {system.name}
-          </span>
-        )}
+        {/* 좌측 상단: System badge (있을 때) + Planet avatar (있을 때)를 flex row로.
+         *  가변 너비 badge가 Planet을 가리지 않도록 gap-1으로 분리.
+         *  둘 다 pointer-events-none — 드래그 방해 안 함. */}
+        {(post.systemId && system && !system.isDefault) || post.authorPlanetSeed !== undefined ? (
+          <div className="flex flex-row items-center gap-1 absolute top-1.5 left-1.5 z-10 pointer-events-none">
+            {post.systemId && system && !system.isDefault && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm">
+                {system.name}
+              </span>
+            )}
+            {post.authorPlanetSeed !== undefined && (
+              <PlanetAvatar planetSeed={post.authorPlanetSeed} size={20} />
+            )}
+          </div>
+        ) : null}
 
+        {/* Date badge — hover 시에만 표시. mobile (hover:none) fallback 포함. */}
         {post.createdAt && (
-          <span className="absolute top-1.5 right-1.5 z-10 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm">
+          <span className="absolute top-1.5 right-1.5 z-10 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:!opacity-100">
             {new Date(post.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
           </span>
         )}
 
-        {/* Bottom: author planet (top-right) + like button (bottom-right) */}
-        {post.authorPlanetSeed !== undefined && (
-          <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-            <PlanetAvatar planetSeed={post.authorPlanetSeed} size={20} />
-          </div>
-        )}
-
+        {/* Like button — hover 시에만 표시. mobile fallback 포함. */}
         <button
           type="button"
           onClick={(e) => {
@@ -391,7 +397,7 @@ export const PostCard = memo(function PostCard({
             onToggleLike();
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          className="absolute bottom-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center bg-foreground/60 hover:bg-foreground/80 backdrop-blur-sm transition-all duration-200 active:scale-90"
+          className="absolute bottom-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center bg-foreground/60 hover:bg-foreground/80 backdrop-blur-sm transition-all duration-200 active:scale-90 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:!opacity-100"
           aria-label={isLiked ? '좋아요 취소' : '좋아요'}
         >
           <svg
@@ -418,7 +424,7 @@ export const PostCard = memo(function PostCard({
             )}
             {nearEdgeRef.current === 'right' && (
               <div
-                className="fixed inset-y-0 right-0 w-20 pointer-events-none z-20"
+                className="fixed inset-y-0 right-1.5 w-20 pointer-events-none z-20"
                 style={{ background: 'linear-gradient(to left, rgba(0,0,0,0.18), transparent 70%)' }}
               />
             )}
