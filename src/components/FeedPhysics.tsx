@@ -202,6 +202,11 @@ export function FeedPhysics({ posts }: FeedPhysicsProps) {
             node.vy = (Math.random() - 0.5) * MIN_SPEED * 2;
           }
 
+          // Integrate velocity into position. SWAP silent-drop의 핵심
+          // 함정: 이 2줄이 빠지면 velocity/friction/bounce가 계산되어도
+          // 적용 안 됨 → 모든 카드가 정지.
+          node.x += node.vx;
+          node.y += node.vy;
           if (node.entering) {
             const b = getBounds(canvas, node.size);
             if (node.x >= b.minX && node.x <= b.maxX && node.y >= b.minY && node.y <= b.maxY) {
