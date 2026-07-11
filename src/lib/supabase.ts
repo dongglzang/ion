@@ -83,24 +83,99 @@ export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+/**
+ * Auth state change subscription.
+ *
+ * Surfaces four kinds of events to the caller. Defensive guarantees:
+ *  - `callback` is ALWAYS called once per event — even when profile fetch throws.
+ *    A stuck unhandled rejection would leave AuthProvider in its initial loading
+ *    state (setIsLoading(false) never runs) → entire app wedged.
+ *  - On profile fetch error, we surface the failure via `onProfileError` (optional)
+ *    and fall back to a fake "Anonymous" identity derived from the auth.users row.
+ *    We do NOT sign the user out: a transient network blip should not destroy
+ *    their session, and the alternative (silent identity) is observable on /my.
+ *  - We only re-fetch the profile on events that can change it. TOKEN_REFRESHED
+ *    fires every ~50 min and would otherwise re-run the same SELECT pointlessly.
+ *
+ * The previous implementation discarded `error` from .single(), had no try/catch
+ * around the await, and treated every event identically — three real failure modes
+ * (silent fake Anonymous, wedged loading state, unnecessary network) collapsed into
+ * one path. The new shape distinguishes the events and never throws.
+ */
+export type AuthEvent =
+  | 'INITIAL_SESSION'
+  | 'SIGNED_IN'
+  | 'SIGNED_OUT'
+  | 'USER_UPDATED'
+  | 'TOKEN_REFRESHED';
+
+export interface AuthUserPayload {
+  id: string;
+  display_name: string;
+  planet_seed: number;
+  status_message: string | null;
+}
+
+export interface AuthChangeOptions {
+  /** Called when the profile SELECT fails (network / RLS / missing row). */
+  onProfileError?: (err: unknown) => void;
+}
+
 export function onAuthStateChange(
-  callback: (user: { id: string; display_name: string; planet_seed: number; status_message: string | null } | null) => void,
+  callback: (user: AuthUserPayload | null) => void,
+  options: AuthChangeOptions = {},
 ) {
-  return supabase.auth.onAuthStateChange(async (_event, session) => {
-    if (!session?.user) return callback(null);
+  const { onProfileError } = options;
+  return supabase.auth.onAuthStateChange(async (event, session) => {
+    // 1) Signed out (or no session): always callback(null) and return.
+    if (!session?.user) {
+      callback(null);
+      return;
+    }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id, display_name, planet_seed, status_message')
-      .eq('id', session.user.id)
-      .single();
+    // 2) TOKEN_REFRESHED: profile is unchanged. AuthProvider already holds the
+    // correct identity from INITIAL_SESSION; calling callback() here would
+    // overwrite the user's display_name / planet_seed / status_message with
+    // fallbacks every ~50 min (RerollModal/StatusMessageEditor 손실).
+    // setIsLoading(false) is already false after INITIAL_SESSION fired.
+    if (event === 'TOKEN_REFRESHED') {
+      return;
+    }
 
-    callback({
-      id: session.user.id,
-      display_name: profile?.display_name ?? session.user.user_metadata?.full_name ?? 'Anonymous',
-      planet_seed: (profile?.planet_seed ?? 0) >>> 0,
-      status_message: profile?.status_message ?? null,
-    });
+    // 3) INITIAL_SESSION / SIGNED_IN / USER_UPDATED: refresh profile.
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id, display_name, planet_seed, status_message')
+        .eq('id', session.user.id)
+        .single();
+
+      if (error) {
+        // PGRST116 = no rows. Auth user has no profile (e.g. partial migration).
+        // Surface to the caller and fall back to a metadata-derived identity —
+        // signing the user out is more destructive than a temporary Anonymous.
+        onProfileError?.(error);
+      }
+
+      callback({
+        id: session.user.id,
+        display_name: profile?.display_name ?? session.user.user_metadata?.full_name ?? 'Anonymous',
+        planet_seed: (profile?.planet_seed ?? 0) >>> 0,
+        status_message: profile?.status_message ?? null,
+      });
+    } catch (err) {
+      // .single() await itself rejected (network throw, JWT signature throw).
+      // Without this catch, the unhandled rejection propagates → AuthProvider
+      // never reaches setIsLoading(false) → app stays on the loading splash
+      // until the user clears their session token and hard-refreshes.
+      onProfileError?.(err);
+      callback({
+        id: session.user.id,
+        display_name: session.user.user_metadata?.full_name ?? 'Anonymous',
+        planet_seed: 0,
+        status_message: null,
+      });
+    }
   });
 }
 
@@ -315,11 +390,11 @@ export async function getMyLikedPostIds(userId: string): Promise<string[]> {
 // World — 상호 연결
 // ============================================
 
-export async function getAllMutualConnections(): Promise<{ user_a: string; user_b: string }[]> {
-  const { data, error } = await supabase.rpc('all_mutual_connections');
-  if (error) throw error;
-  return data ?? [];
-}
+// DEAD SURFACE: all_mutual_connections RPC는 어떤 마이그레이션에도 정의되어
+// 있지 않고 (prod/staging/모두), React에서 caller 0건. 삭제. mutual_connections
+// 만이 useWorld.useWorldGraphQuery에서 사용 중.
+// (history: 2026-07-10 audit, ref #audit-summary)
+// export async function getAllMutualConnections(): Promise<...> { ... }  // ← 삭제됨
 
 export async function getMutualConnections(viewerId: string): Promise<string[]> {
   const { data, error } = await supabase.rpc('mutual_connections', { viewer_id: viewerId });
