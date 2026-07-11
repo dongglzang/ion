@@ -192,10 +192,15 @@ export function FeedPhysics({ posts }: FeedPhysicsProps) {
               node.vx = releasedVelocity.vx;
               node.vy = releasedVelocity.vy;
             }
+          } else if (node.vx === 0 && node.vy === 0) {
+            // drag 중이었다면 release 시 velocity가 0이 아닐 수 있으나,
+            // pointermove가 setPointerCapture 실패로 setDragVelocity를
+            // 호출 못한 경우 (puppeteer 등) 또는 빠르게 멈춘 경우:
+            // 영원히 멈춤. MIN_SPEED floor가 적용되도록 random initial kick.
+            // (드래그 안 한 카드는 initNodes에서 MIN_SPEED kick를 받음.)
+            node.vx = (Math.random() - 0.5) * MIN_SPEED * 2;
+            node.vy = (Math.random() - 0.5) * MIN_SPEED * 2;
           }
-
-          node.x += node.vx;
-          node.y += node.vy;
 
           if (node.entering) {
             const b = getBounds(canvas, node.size);
