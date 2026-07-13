@@ -8,6 +8,7 @@ import {
   onAuthStateChange,
 } from '@/lib/supabase';
 import { clearUserSessionState } from '@/hooks/queries/useFeed';
+import { toast } from 'sonner';
 
 export interface AuthUser {
   id: string;
@@ -35,26 +36,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const prevUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange((authUser) => {
-      if (authUser) {
-        prevUserIdRef.current = authUser.id;
-        setUser({
-          id: authUser.id,
-          displayName: authUser.display_name,
-          planetSeed: (authUser.planet_seed ?? 0) >>> 0,
-          statusMessage: authUser.status_message ?? null,
-        });
-      } else {
-        // 세션별 메모리(dismissedByUser, refillChainByUser) 폐기.
-        // 직전 사용자 키를 보존 → anon 키 또는 실 userId 어느 쪽이든
-        // 정확히 해당 entry 만 삭제.
-        clearUserSessionState(prevUserIdRef.current);
-        prevUserIdRef.current = null;
-        setUser(null);
-        queryClient.clear();
-      }
-      setIsLoading(false);
-    });
+    const { data: { subscription } } = onAuthStateChange(
+      (authUser) => {
+        if (authUser) {
+          prevUserIdRef.current = authUser.id;
+          setUser({
+            id: authUser.id,
+            displayName: authUser.display_name,
+            planetSeed: (authUser.planet_seed ?? 0) >>> 0,
+            statusMessage: authUser.status_message ?? null,
+          });
+        } else {
+          // 세션별 메모리(dismissedByUser, refillChainByUser) 폐기.
+          // 직전 사용자 키를 보존 → anon 키 또는 실 userId 어느 쪽이든
+          // 정확히 해당 entry 만 삭제.
+          clearUserSessionState(prevUserIdRef.current);
+          prevUserIdRef.current = null;
+          setUser(null);
+          queryClient.clear();
+        }
+        setIsLoading(false);
+      },
+      {
+        // profile SELECT 실패 (RLS 거부, network throw, missing row).
+        // callback은 이미 fallback identity로 호출되므로 앱이 멈추지는 않지만,
+        // 사용자는 자기 표시명/행성을 잃은 채 로그인된 상태가 됨 → 한 번만 알림.
+        onProfileError: (err) => {
+          console.warn('[auth] profile fetch failed; using fallback identity', err);
+          toast.error('프로필을 불러오지 못했어요. 잠시 후 /my에서 새로고침해 주세요.', {
+            duration: 4000,
+          });
+        },
+      },
+    );
     return () => subscription.unsubscribe();
   }, []);
 

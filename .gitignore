@@ -31,6 +31,11 @@ coverage
 *-result.md
 .design-farmer/
 
+# Agent / harness working files
+.omp/
+local:/
+docs/designs/ui-audit/
+
 # Environment variables
 .env
 .env.local

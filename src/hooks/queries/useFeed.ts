@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
 import { getFeed } from '@/lib/supabase';
 import { toPost } from '@/lib/mappers';
@@ -90,8 +91,22 @@ export function useDismissPost(userId: string, systemId?: string | null) {
               return deduped.length > 0 ? [...old, ...deduped] : old;
             });
           }
-        } catch {
-          // 보충 실패해도 dismiss 자체는 유지
+        } catch (err) {
+          // 보충 실패: dismiss는 유지(사용자가 의도적으로 없앤 글)하되,
+          // 그렇다고 카드가 사라진 채로 비어가는 경험을 방치하면 안 됨.
+          // 사용자에게 알리고, retry 버튼은 현재 feed 쿼리를 무효화하여
+          // refetchFeed와 동일한 효과를 낸다. dismissedIds는 그대로 유지되므로
+          // 사용자가 보충된 카드를 새로 dismiss하면 다음 보충 시도 가능.
+          console.warn('[useDismissPost] refill failed', err);
+          toast.error('새 글을 가져오지 못했어요.', {
+            duration: 5000,
+            action: {
+              label: '다시 시도',
+              onClick: () => {
+                queryClient.invalidateQueries({ queryKey: key });
+              },
+            },
+          });
         }
       };
       const prev = getRefillChain(userId);

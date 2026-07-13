@@ -1,11 +1,19 @@
-import { useState, useRef, useCallback, type ComponentType } from 'react';
+import { useState, useRef, useCallback, type ComponentType, lazy, Suspense } from 'react';
 import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/AuthProvider';
 import { useClient } from '@/hooks/ClientProvider';
 import { Home, Globe, User, Sun, Moon } from 'lucide-react';
 import { useI18n } from '@/i18n';
-import { NotificationCenter } from '@/components/NotificationCenter';
+// NotificationCenter는 인증된 사용자에게만 보이는 종 아이콘 + 드롭다운 패널.
+// framer-motion + bell SVG를 import하므로 초기 entry chunk에서 분리.
+// user 조건부 + lazy + Suspense fallback={null} → 종 자리만 예약하고 청크는
+// 첫 클릭 이후 로드. 모바일 첫 페인트 ~50KB(gz) 절약.
+const NotificationCenter = lazy(() =>
+  import('@/components/NotificationCenter').then((m) => ({ default: m.NotificationCenter }))
+);
 import { useSystemBySlug } from '@/hooks/queries/useSystems';
+import { useProfileQuery } from '@/hooks/queries/useProfile';
+import { PlanetAvatar } from '@/components/PlanetAvatar';
 import { cn } from '@/lib/utils';
 
 type DevLoginModalProps = {
@@ -66,6 +74,8 @@ export function Header() {
   const { t } = useI18n();
   const location = useLocation();
   const params = useParams<{ slug: string }>();
+  const { data: profile } = useProfileQuery(user?.id ?? '');
+  const headerPlanetSeed = profile?.planetSeed;
   const slug = params.slug;
   const { data: activeSystem } = useSystemBySlug(slug);
   const activeSystemName = activeSystem?.name;
@@ -120,9 +130,20 @@ export function Header() {
           to="/"
           className="group flex items-center gap-2 select-none shrink-0"
         >
-          <span className="relative flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-accent/10 ring-1 ring-accent/20 transition-all duration-300 group-hover:bg-accent/15 group-hover:ring-accent/30 group-hover:shadow-[0_0_12px_oklch(var(--accent)/0.15)]">
-            <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-accent transition-transform duration-300 group-hover:scale-125" />
-          </span>
+          {user && profile && headerPlanetSeed !== undefined ? (
+            <PlanetAvatar
+              planetSeed={headerPlanetSeed}
+              fallbackUserId={user.id}
+              size={28}
+              flat
+              className="sm:!w-8 sm:!h-8 transition-transform duration-300 group-hover:scale-110"
+              aria-label="내 행성"
+            />
+          ) : (
+            <span className="relative flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-accent/10 ring-1 ring-accent/20 transition-all duration-300 group-hover:bg-accent/15 group-hover:ring-accent/30 group-hover:shadow-[0_0_12px_oklch(var(--accent)/0.15)]">
+              <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-accent transition-transform duration-300 group-hover:scale-125" />
+            </span>
+          )}
           <span className="text-[17px] sm:text-[19px] font-bold text-foreground tracking-[-0.035em] transition-colors duration-300 font-display">
             ION
           </span>
@@ -152,7 +173,11 @@ export function Header() {
 
         {/* Right: Actions */}
         <div className="flex items-center justify-end gap-0.5 shrink-0">
-          {user && <NotificationCenter userId={user.id} />}
+          {user && (
+            <Suspense fallback={null}>
+              <NotificationCenter userId={user.id} />
+            </Suspense>
+          )}
           <button
             type="button"
             title={t('header.toggleTheme')}

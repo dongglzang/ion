@@ -1,4 +1,5 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useLayoutEffect, memo } from 'react';
+import { imageSrcSet, sizesAttr, transformUrl } from '@/lib/imageUrl';
 import type { Post, System } from '@/types';
 import { positionStore } from '@/stores/positionStore';
 import { OverlayRenderer } from '@/components/OverlayRenderer';
@@ -7,28 +8,42 @@ import { renderSystemVisual } from '@/constants/stars';
 
 interface PostCardProps {
   post: Post;
-  x: number;
-  y: number;
-  size: number;
-  opacity: number;
-  isDragging: boolean;
-  isDeleteMode?: boolean;
+  size?: number;
   isLiked: boolean;
   /** 부모에서 1회 fetch한 system 캐시. 카드가 5~15개 동시 렌더 시 useSystems() 중복 호출 제거. */
   system?: System;
-  onClick: () => void;
+  /** 클릭 시 positionStore에서 직접 read한 현재 위치를 함께 전달.
+   *  FeedCards의 render 시점에 capture된 stale rect를 피하기 위함. */
+  onClick: (rect: { x: number; y: number; size: number }) => void;
   onToggleLike: () => void;
   onDelete?: () => void;
 }
 
-export function PostCard({
+/**
+ * v2: ref-driven PostCard.
+ *
+ * - 위치/크기/투명도는 prop으로 안 받음. rAF 루프가 positionStore에서
+ *   setPosition으로 갱신 → 자기 containerRef.style.transform/opacity 직접 set.
+ *   React는 mount/unmount + 정적 props 변화(좋아요, system) 시에만 reconcile.
+ * - isDragging / isDeleteMode 시각 효과(red border, cursor, z-index)는
+ *   PostCard가 자기 ref에 직접 class/boxShadow/style.zIndex를 토글.
+ *   rAF는 알지 못함 — setDragging 호출이 notify → PostCard가 subscribe로 받아
+ *   자기 상태에 반영.
+ * - 드래그 좌표는 PostCard의 setPointerCapture + onPointerMove가
+ *   positionStore.setDragPos (non-notifying)로 직접 push. 다음 rAF tick이
+ *   그 좌표를 읽어 자기 transform에 반영.
+ * - hover-only UI (날짜/좋아요 버튼): CSS group-hover/group-focus-within + 모바일
+ *   fallback [@media(hover:none)]:!opacity-100. React state 안 쓰므로 hover
+ *   enter/leave에 PostCard reconcile 안 일어남 (memo 유지).
+ *   onPointerEnter/Leave는 physics용으로 이미 존재.
+ * - 행성 avatar: 좌측 상단 (top-1.5 left-1.5). System badge가 있으면
+ *   System 정보 우선 (avatar가 badge와 같은 자리에서 z-10으로 위에 렌더).
+ *   사용자가 명시적으로 "행성 좌측 상단" 요청. pointer-events-none으로
+ *   click은 통과.
+ */
+export const PostCard = memo(function PostCard({
   post,
-  x,
-  y,
   size = 150,
-  opacity,
-  isDragging,
-  isDeleteMode,
   isLiked,
   system,
   onClick,
@@ -36,6 +51,7 @@ export function PostCard({
   onDelete,
 }: PostCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const hasMovedRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -46,45 +62,127 @@ export function PostCard({
   const rotationFrameRef = useRef<number | undefined>(undefined);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const nearEdgeRef = useRef<'left' | 'right' | 'top' | 'bottom' | null>(null);
+  const isDeleteModeRef = useRef(false);
   const systemVisual = system && !system.isDefault ? renderSystemVisual(system.palette) : null;
+
+  // === ref registry: rAF가 직접 set할 수 있도록 containerRef를 positionStore에 등록 ===
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // mount 시 초기 transform 즉시 set (rAF 첫 frame까지 깜빡임 방지)
+    const pos = positionStore.getPosition(post.id);
+    if (pos) {
+      el.style.transform = `translate3d(${pos.x - pos.size / 2}px, ${pos.y - pos.size / 2}px, 0) scale(1) rotate(var(--drag-rotation, 0deg))`;
+      el.style.opacity = String(pos.opacity);
+    } else {
+      el.style.opacity = '0';
+    }
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    positionStore.registerCard(post.id, el);
+    return () => {
+      positionStore.unregisterCard(post.id);
+    };
+  }, [post.id, size]);
+
+  // === isDeleteMode 시각 업데이트 (self-managed) ===
+  useEffect(() => {
+    const apply = (modeId: string | null) => {
+      const active = modeId === post.id;
+      isDeleteModeRef.current = active;
+      const inner = innerRef.current;
+      if (inner) {
+        if (active) {
+          inner.style.boxShadow = '0 0 0 2px oklch(var(--destructive)), var(--shadow-md)';
+        } else if (isDraggingRef.current) {
+          inner.style.boxShadow = '0 0 0 1px oklch(var(--border)), var(--shadow-md)';
+        } else {
+          inner.style.boxShadow = '0 0 0 1px oklch(var(--border)), var(--shadow-md)';
+        }
+      }
+    };
+    apply(positionStore.getDeleteModeId());
+    return positionStore.subscribeDeleteMode(apply);
+  }, [post.id]);
+
+  // === isDragging 시각 업데이트 (self-managed) ===
+  useEffect(() => {
+    const apply = (id: string | null) => {
+      const dragging = id === post.id;
+      isDraggingRef.current = dragging;
+      const el = containerRef.current;
+      if (el) {
+        el.classList.toggle('cursor-grabbing', dragging);
+        el.classList.toggle('cursor-grab', !dragging);
+        el.style.zIndex = dragging ? '10' : '1';
+      }
+      const inner = innerRef.current;
+      if (inner) {
+        if (isDeleteModeRef.current) {
+          inner.style.boxShadow = '0 0 0 2px oklch(var(--destructive)), var(--shadow-md)';
+        } else if (dragging) {
+          inner.style.boxShadow = '0 0 0 1px oklch(var(--border)), var(--shadow-md)';
+        } else {
+          inner.style.boxShadow = '0 0 0 1px oklch(var(--border)), var(--shadow-md)';
+        }
+      }
+    };
+    apply(positionStore.getDraggingId());
+    return positionStore.subscribeDragging(apply);
+  }, [post.id]);
+
+  // === hover 시각 업데이트 (z-index만 살짝 올림) ===
+  useEffect(() => {
+    const apply = (id: string | null) => {
+      const el = containerRef.current;
+      if (!el) return;
+      if (id === post.id && !isDraggingRef.current) {
+        el.style.zIndex = '5';
+      } else if (!isDraggingRef.current) {
+        el.style.zIndex = '1';
+      }
+    };
+    apply(positionStore.getHoveredId());
+    return positionStore.subscribeHovered(apply);
+  }, [post.id]);
 
   function animateRotation() {
     const diff = targetRotationRef.current - currentRotationRef.current;
     if (Math.abs(diff) < 0.1) {
       currentRotationRef.current = targetRotationRef.current;
-      containerRef.current?.style.setProperty(
-        '--drag-rotation',
-        `${currentRotationRef.current}deg`,
-      );
+      if (containerRef.current) {
+        containerRef.current.style.setProperty('--drag-rotation', `${currentRotationRef.current}deg`);
+      }
       rotationFrameRef.current = undefined;
       return;
     }
-    currentRotationRef.current += diff * 0.15;
-    containerRef.current?.style.setProperty(
-      '--drag-rotation',
-      `${currentRotationRef.current}deg`,
-    );
+    currentRotationRef.current += diff * 0.18;
+    if (containerRef.current) {
+      containerRef.current.style.setProperty('--drag-rotation', `${currentRotationRef.current}deg`);
+    }
     rotationFrameRef.current = requestAnimationFrame(animateRotation);
   }
 
   const startRotationAnim = useCallback(
     (target: number) => {
       targetRotationRef.current = target;
-      if (!rotationFrameRef.current) {
+      if (rotationFrameRef.current === undefined) {
         rotationFrameRef.current = requestAnimationFrame(animateRotation);
       }
     },
-    [animateRotation],
+    [],
   );
 
   useEffect(() => {
     return () => {
-      if (rotationFrameRef.current) cancelAnimationFrame(rotationFrameRef.current);
+      if (rotationFrameRef.current !== undefined) {
+        cancelAnimationFrame(rotationFrameRef.current);
+      }
     };
   }, []);
 
   const clearLongPress = useCallback(() => {
-    if (longPressTimerRef.current) {
+    if (longPressTimerRef.current !== null) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
@@ -93,162 +191,135 @@ export function PostCard({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest('button')) return;
+      if (target.closest('button, a, [role="button"]')) return;
+      if (e.button !== 0) return;
 
-      clearLongPress();
-      isDraggingRef.current = true;
+      const pos = positionStore.getPosition(post.id);
+      if (!pos) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
       hasMovedRef.current = false;
-      nearEdgeRef.current = null;
-
-      dragOffsetRef.current = { x: e.clientX - x, y: e.clientY - y };
       dragStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
       prevDragRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+      dragOffsetRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
 
-      positionStore.setDragging(post.id);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-
-      longPressTimerRef.current = setTimeout(() => {
-        if (isDraggingRef.current) {
-          positionStore.setDeleteMode(post.id);
-        }
-      }, 600);
+      clearLongPress();
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null;
+        positionStore.setDeleteMode(post.id);
+      }, 350);
     },
-    [post.id, x, y, clearLongPress],
+    [post.id, clearLongPress],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!isDraggingRef.current) return;
+      if (!dragStartRef.current) return;
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
 
-      const now = Date.now();
-      const newX = e.clientX;
-      const newY = e.clientY;
-
-      if (dragStartRef.current) {
-        const dx = newX - dragStartRef.current.x;
-        const dy = newY - dragStartRef.current.y;
-        if (Math.sqrt(dx * dx + dy * dy) > 5) {
-          hasMovedRef.current = true;
-          clearLongPress();
+      if (!hasMovedRef.current && dist > 4) {
+        hasMovedRef.current = true;
+        clearLongPress();
+        positionStore.setDeleteMode(null);
+        positionStore.setDragging(post.id);
+        const pos = positionStore.getPosition(post.id);
+        if (pos) {
+          dragOffsetRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
         }
       }
 
-      const rawCenterX = newX - dragOffsetRef.current.x;
-      const rawCenterY = newY - dragOffsetRef.current.y;
-      let centerX = rawCenterX;
-      let centerY = rawCenterY;
+      if (hasMovedRef.current) {
+        const newX = e.clientX - dragOffsetRef.current.x;
+        const newY = e.clientY - dragOffsetRef.current.y;
+        positionStore.setDragPos(post.id, newX, newY);
 
-      const TOP_OFFSET = 72;
-      const minX = size / 2;
-      const maxX = window.innerWidth - size / 2;
-      const minY = TOP_OFFSET + size / 2;
-      const maxY = window.innerHeight - size / 2;
-      centerX = Math.max(minX, Math.min(maxX, centerX));
-      centerY = Math.max(minY, Math.min(maxY, centerY));
+        const now = Date.now();
+        if (prevDragRef.current) {
+          const dt = now - prevDragRef.current.time;
+          if (dt > 0) {
+            const vx = (e.clientX - prevDragRef.current.x) / dt;
+            const vy = (e.clientY - prevDragRef.current.y) / dt;
+            positionStore.setDragVelocity(post.id, vx * 16, vy * 16);
+          }
+        }
+        prevDragRef.current = { x: e.clientX, y: e.clientY, time: now };
 
-      if (rawCenterX < minX) nearEdgeRef.current = 'left';
-      else if (rawCenterX > maxX) nearEdgeRef.current = 'right';
-      else if (rawCenterY < minY) nearEdgeRef.current = 'top';
-      else if (rawCenterY > maxY) nearEdgeRef.current = 'bottom';
-      else nearEdgeRef.current = null;
-
-      if (prevDragRef.current) {
-        const dt = Math.max(1, now - prevDragRef.current.time);
-        const vx = ((newX - prevDragRef.current.x) / dt) * 16;
-        const vy = ((newY - prevDragRef.current.y) / dt) * 16;
-        positionStore.setDragVelocity(post.id, vx, vy);
-
-        const targetRotation = Math.max(-12, Math.min(12, vx * 3));
-        startRotationAnim(targetRotation);
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        if (newX < 60) nearEdgeRef.current = 'left';
+        else if (newX > w - 60) nearEdgeRef.current = 'right';
+        else if (newY < 100) nearEdgeRef.current = 'top';
+        else if (newY > h - 60) nearEdgeRef.current = 'bottom';
+        else nearEdgeRef.current = null;
       }
-
-      prevDragRef.current = { x: newX, y: newY, time: now };
-      positionStore.updateSinglePosition(post.id, centerX, centerY);
     },
-    [post.id, clearLongPress, startRotationAnim],
+    [post.id, clearLongPress],
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (!isDraggingRef.current) return;
-
       clearLongPress();
-      isDraggingRef.current = false;
+      e.currentTarget.releasePointerCapture(e.pointerId);
 
-      const edge = nearEdgeRef.current;
-      if (hasMovedRef.current && edge) {
-        const edgeDir: Record<
-          'left' | 'right' | 'top' | 'bottom',
-          { vx: number; vy: number }
-        > = {
-          left: { vx: -1, vy: 0 },
-          right: { vx: 1, vy: 0 },
-          top: { vx: 0, vy: -1 },
-          bottom: { vx: 0, vy: 1 },
-        };
-        const dir = edgeDir[edge];
-        const vel = positionStore.getDragVelocity(post.id) ?? { vx: 0, vy: 0 };
-        positionStore.markForDismissal(
-          post.id,
-          dir.vx * 4 + vel.vx * 0.3,
-          dir.vy * 4 + vel.vy * 0.3,
-        );
+      if (isDraggingRef.current) {
+        const velocity = positionStore.consumeDragVelocity(post.id);
+        const vx = velocity?.vx ?? 0;
+        const vy = velocity?.vy ?? 0;
         positionStore.setDragging(null);
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-        return;
+
+        if (nearEdgeRef.current && (Math.abs(vx) > 1.2 || Math.abs(vy) > 1.2)) {
+          const dir = nearEdgeRef.current;
+          let ddvx = 0;
+          let ddvy = 0;
+          if (dir === 'left') ddvx = -15;
+          else if (dir === 'right') ddvx = 15;
+          else if (dir === 'top') ddvy = -15;
+          else ddvy = 15;
+          positionStore.markForDismissal(post.id, ddvx, ddvy);
+        } else if (hasMovedRef.current) {
+          startRotationAnim(0);
+        }
+      } else if (isDeleteModeRef.current) {
+        positionStore.setDeleteMode(null);
+        onDelete?.();
+      } else {
+        // 클릭 (이동 없음). 현재 위치는 mount 시점이 아니라 클릭 시점에 read.
+        const clickPos = positionStore.getPosition(post.id);
+        if (clickPos) onClick({ x: clickPos.x, y: clickPos.y, size: clickPos.size });
       }
 
-      const deleteModeId = positionStore.getDeleteModeId();
-      if (deleteModeId === post.id) {
-        positionStore.setDragging(null);
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-        return;
-      }
-
-      positionStore.setDragging(null);
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-
-      if (!hasMovedRef.current) {
-        onClick();
-      }
-
+      dragStartRef.current = null;
+      prevDragRef.current = null;
+      hasMovedRef.current = false;
       nearEdgeRef.current = null;
-      startRotationAnim(0);
     },
-    [post.id, onClick, clearLongPress, startRotationAnim],
+    [post.id, onClick, onDelete, clearLongPress, startRotationAnim],
   );
-
-  const cardBorderStyle: React.CSSProperties = isDeleteMode
-    ? { boxShadow: '0 0 0 2px oklch(var(--destructive)), var(--shadow-md)' }
-    : isDragging
-      ? { boxShadow: '0 0 0 1px oklch(var(--border)), var(--shadow-md)' }
-      : { boxShadow: '0 0 0 1px oklch(var(--border)), var(--shadow-md)' };
 
   return (
     <div
       ref={containerRef}
-      className={`group absolute pointer-events-auto select-none ${isDragging ? 'cursor-grabbing z-10' : 'cursor-grab'}`}
+      className="group absolute pointer-events-auto select-none cursor-grab"
       style={{
-        width: size,
-        height: size,
         left: 0,
         top: 0,
-        '--drag-rotation': `${currentRotationRef.current}deg`,
-        transform: `translate3d(${x - size / 2}px, ${y - size / 2}px, 0) scale(${isDragging ? 1.05 : 1}) rotate(var(--drag-rotation, 0deg))`,
-        opacity,
-        transition: 'box-shadow 0.3s ease',
+        width: size,
+        height: size,
         touchAction: 'none',
         willChange: 'transform',
-      } as React.CSSProperties}
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onMouseEnter={() => positionStore.setHovered(post.id)}
-      onMouseLeave={() => positionStore.setHovered(null)}
+      onPointerCancel={handlePointerUp}
+      onPointerEnter={() => positionStore.setHovered(post.id)}
+      onPointerLeave={() => positionStore.setHovered(null)}
     >
       <div
+        ref={innerRef}
         className="w-full h-full rounded-[20px] overflow-hidden relative"
-        style={{ ...cardBorderStyle, backgroundColor: 'oklch(var(--surface-elevated))' }}
+        style={{ boxShadow: '0 0 0 1px oklch(var(--border)), var(--shadow-md)', backgroundColor: 'oklch(var(--surface-elevated))' }}
       >
         {post.media ? (
           <div className="absolute inset-0">
@@ -262,141 +333,116 @@ export function PostCard({
                   muted
                 />
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-10 h-10 rounded-full bg-foreground/70 backdrop-blur-sm flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 text-background ml-0.5"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
+                  <svg className="w-4 h-4 dark:text-gray-100 text-black drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 </div>
               </>
             ) : (
               <img
-                src={post.media}
+                src={transformUrl(post.media, 640)}
+                srcSet={imageSrcSet(post.media, { widths: [160, 320, 640, 960] })}
+                sizes={sizesAttr(260)}
                 alt=""
                 className="w-full h-full object-cover"
-                draggable={false}
                 loading="lazy"
                 decoding="async"
+                draggable={false}
               />
-            )}
-            {post.overlays && post.overlays.length > 0 && (
-              <OverlayRenderer overlays={post.overlays} />
             )}
           </div>
         ) : post.bgColor ? (
-          <div
-            className="absolute inset-0"
-            style={{ background: post.bgColor }}
-          >
-            {systemVisual && (
-              <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/45 backdrop-blur-sm pointer-events-none max-w-[70%]">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: systemVisual.gradient }} />
-                <span className="text-[10px] text-white/90 truncate">{system?.name}</span>
-              </div>
-            )}
-            {post.overlays && post.overlays.length > 0 && (
-              <OverlayRenderer overlays={post.overlays} />
-            )}
-          </div>
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 pt-9">
-            {systemVisual && (
-              <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/45 backdrop-blur-sm pointer-events-none max-w-[70%]">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: systemVisual.gradient }} />
-                <span className="text-[10px] text-white/90 truncate">{system?.name}</span>
-              </div>
-            )}
-            {post.overlays && post.overlays.length > 0 && (
-              <OverlayRenderer overlays={post.overlays} />
-            )}
-          </div>
+          <div className="absolute inset-0" style={{ background: post.bgColor }} />
+        ) : null}
+
+        {post.overlays && post.overlays.length > 0 && (
+          <OverlayRenderer overlays={post.overlays} />
         )}
 
+        {systemVisual && (
+          <div
+            className="absolute inset-0 mix-blend-overlay pointer-events-none"
+            style={{ opacity: 0.3, background: systemVisual.gradient }}
+          />
+        )}
+
+        {/* 좌측 상단: System badge (있을 때) + Planet avatar (있을 때)를 flex row로.
+         *  가변 너비 badge가 Planet을 가리지 않도록 gap-1으로 분리.
+         *  둘 다 pointer-events-none — 드래그 방해 안 함. */}
+        {(post.systemId && system && !system.isDefault) || post.authorPlanetSeed !== undefined ? (
+          <div className="flex flex-row items-center gap-1 absolute top-1.5 left-1.5 z-10 pointer-events-none">
+            {post.systemId && system && !system.isDefault && (
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm">
+                {system.name}
+              </span>
+            )}
+            {post.authorPlanetSeed !== undefined && (
+              <PlanetAvatar planetSeed={post.authorPlanetSeed} size={20} />
+            )}
+          </div>
+        ) : null}
+
+        {/* Date badge — hover 시에만 표시. mobile (hover:none) fallback 포함. */}
+        {post.createdAt && (
+          <span className="absolute top-1.5 right-1.5 z-10 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-foreground/70 text-background backdrop-blur-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:!opacity-100">
+            {new Date(post.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
+          </span>
+        )}
+
+        {/* Like button — hover 시에만 표시. mobile fallback 포함. */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onToggleLike();
           }}
-          className="absolute bottom-2 right-2 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md z-10 active:scale-[0.85] focus-visible:opacity-100 transition-opacity duration-150 ${isLiked ? 'opacity-100' : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100'}"
-          style={{
-            backgroundColor: isLiked ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.32)',
-          }}
-          aria-label="like"
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute bottom-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center bg-foreground/60 hover:bg-foreground/80 backdrop-blur-sm transition-all duration-200 active:scale-90 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:!opacity-100"
+          aria-label={isLiked ? '좋아요 취소' : '좋아요'}
         >
           <svg
-            className="w-4 h-4 transition-[fill,stroke] duration-200"
-            style={{
-              fill: isLiked ? '#ec4899' : 'none',
-              stroke: '#ffffff',
-            }}
-            strokeWidth={2}
+            width="14"
+            height="14"
             viewBox="0 0 24 24"
+            fill={isLiked ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="2"
+            className={isLiked ? 'text-rose-400' : 'text-background'}
           >
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41 0.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
         </button>
-        <div
-          className="absolute z-10 pointer-events-none"
-          style={{
-            bottom: Math.round(size * 0.03),
-            left: Math.round(size * 0.05),
-          }}
-          aria-hidden
-        >
-          <PlanetAvatar
-            planetSeed={post.authorPlanetSeed}
-            fallbackUserId={post.authorId}
-            size={Math.max(24, Math.min(48, Math.round(size * 0.22)))}
-            flat
-          />
-        </div>
-        {isDeleteMode && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete?.();
-            }}
-            className="absolute -top-2 -right-2 w-8 h-8 bg-[hsl(5,65%,48%)] text-white rounded-full flex items-center justify-center shadow-lg hover:opacity-90 transition-all duration-200 z-20 active:scale-90"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+
+        {/* edge-drag gradient hint */}
+        {nearEdgeRef.current && (
+          <>
+            {nearEdgeRef.current === 'left' && (
+              <div
+                className="fixed inset-y-0 left-0 w-20 pointer-events-none z-20"
+                style={{ background: 'linear-gradient(to right, rgba(0,0,0,0.18), transparent 70%)' }}
+              />
+            )}
+            {nearEdgeRef.current === 'right' && (
+              <div
+                className="fixed inset-y-0 right-1.5 w-20 pointer-events-none z-20"
+                style={{ background: 'linear-gradient(to left, rgba(0,0,0,0.18), transparent 70%)' }}
+              />
+            )}
+            {nearEdgeRef.current === 'top' && (
+              <div
+                className="fixed inset-x-0 top-0 h-20 pointer-events-none z-20"
+                style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.18), transparent 70%)' }}
+              />
+            )}
+            {nearEdgeRef.current === 'bottom' && (
+              <div
+                className="fixed inset-x-0 bottom-0 h-20 pointer-events-none z-20"
+                style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.18), transparent 70%)' }}
+              />
+            )}
+          </>
         )}
       </div>
-
-      {isDragging && nearEdgeRef.current && (
-        <>
-          {nearEdgeRef.current === 'left' && (
-            <div
-              className="fixed inset-y-0 left-0 w-20 pointer-events-none z-20"
-              style={{ background: 'linear-gradient(to right, rgba(0,0,0,0.18), transparent 70%)' }}
-            />
-          )}
-          {nearEdgeRef.current === 'right' && (
-            <div
-              className="fixed inset-y-0 right-0 w-20 pointer-events-none z-20"
-              style={{ background: 'linear-gradient(to left, rgba(0,0,0,0.18), transparent 70%)' }}
-            />
-          )}
-          {nearEdgeRef.current === 'top' && (
-            <div
-              className="fixed inset-x-0 top-0 h-20 pointer-events-none z-20"
-              style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.18), transparent 70%)' }}
-            />
-          )}
-          {nearEdgeRef.current === 'bottom' && (
-            <div
-              className="fixed inset-x-0 bottom-0 h-20 pointer-events-none z-20"
-              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.18), transparent 70%)' }}
-            />
-          )}
-        </>
-      )}
     </div>
   );
-}
+});

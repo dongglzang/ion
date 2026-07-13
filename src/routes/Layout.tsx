@@ -1,8 +1,10 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from '@/components/Header';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from 'sonner';
 import { useClient } from '@/hooks/ClientProvider';
+
 
 export function Layout() {
   const { theme } = useClient();
@@ -25,7 +27,9 @@ export function Layout() {
           lazy 라우트가 실제로 렌더되는 Outlet 위치에 Suspense 경계 필수.
           fallback=null — 빈 화면 깜빡임 대신 헤더만 잠깐 보이는 게 자연스러움. */}
       <Suspense fallback={null}>
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </Suspense>
       <Toaster position="bottom-center" richColors closeButton toastOptions={{ style: { marginBottom: '5rem' } }} />
     </div>

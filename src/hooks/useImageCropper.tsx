@@ -1,10 +1,5 @@
-import { useState, useRef, useCallback, lazy, Suspense } from 'react';
-
-// 이미지 크롭 모달은 사용자가 이미지 선택 후에나 필요.
-// lazy 청크로 분리해 초기 페인트 부담 감소.
-const ImageCropModal = lazy(() =>
-  import('@/components/ImageCropModal').then((m) => ({ default: m.ImageCropModal }))
-);
+import { useState, useRef, useCallback } from 'react';
+import { ImageCropperModal } from '@/components/ImageCropperModal';
 
 interface CropResolver {
   resolve: (blob: Blob) => void;
@@ -42,18 +37,13 @@ export function useImageCropper() {
     }
   }, []);
 
-  // fallback=null — 모달은 open 상태에서만 보이므로 빈 fallback이
-  // 시각적 깜빡임 없이 자연스러움. 첫 오픈 시 청크 fetch가 미세하게
-  // 지연될 수 있으나 수십 ms 수준.
   const CropModal = (
-    <Suspense fallback={null}>
-      <ImageCropModal
-        open={cropOpen}
-        onOpenChange={handleOpenChange}
-        imageFile={cropFile}
-        onCropComplete={handleComplete}
-      />
-    </Suspense>
+    <ImageCropperModal
+      open={cropOpen}
+      cropFile={cropFile}
+      onOpenChange={handleOpenChange}
+      onComplete={handleComplete}
+    />
   );
 
   return { requestCrop, CropModal };

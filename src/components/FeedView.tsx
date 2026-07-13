@@ -26,7 +26,7 @@ export function FeedView(props: FeedViewProps) {
       <FeedPhysics posts={props.posts} />
       <FeedCards
         posts={props.posts}
-        onCardClick={props.onCardClick}
+        onCardClick={(post) => props.onCardClick(post)}
         onDelete={props.onDelete}
         expandedPostId={props.expandedPostId}
         likedIds={props.likedIds}

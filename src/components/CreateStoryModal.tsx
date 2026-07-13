@@ -26,7 +26,8 @@ import type { Overlay } from '@/types';
 import { cn } from '@/lib/utils';
 import { useSystems } from '@/hooks/queries/useSystems';
 import { renderSystemVisual } from '@/constants/stars';
-import { buildOverlayStyle, useContainerSize, OVERLAY_FONT_FAMILY } from '@/components/OverlayRenderer';
+import { buildOverlayStyle, OVERLAY_FONT_FAMILY } from '@/components/overlay/style';
+import { useContainerSize } from '@/hooks/useContainerSize';
 
 interface CreateStoryModalProps {
   open: boolean;

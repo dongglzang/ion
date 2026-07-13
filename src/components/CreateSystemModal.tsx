@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -40,20 +40,31 @@ export function CreateSystemModal({ open, onOpenChange, creatorId }: CreateSyste
   const [description, setDescription] = useState('');
   const [palette, setPalette] = useState<string[]>(NEBULA_PRESETS[0].palette);
 
-  useEffect(() => {
-    if (open) {
+  // 모달이 열릴 때 폼을 깨끗하게 리셋한다. useEffect 내부의 setState는 React가
+  // 비권장하므로(연쇄 리렌더) 외부 이벤트(onOpenChange=true 진입)로 끌어올림.
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
       setName('');
       setSlug('');
       setSlugTouched(false);
       setDescription('');
       setPalette(NEBULA_PRESETS[0].palette);
     }
-  }, [open]);
+    onOpenChange(next);
+  };
 
-  // slug 수동 편집이 없으면 name 에서 자동 생성
-  useEffect(() => {
-    if (!slugTouched) setSlug(nameToSlug(name));
-  }, [name, slugTouched]);
+  // 이름 입력 시 slug 수동 편집이 없으면 슬러그를 자동 갱신한다.
+  // effect가 아닌 입력 핸들러에서 setName + setSlug를 한 번에 처리.
+  const handleNameChange = (value: string) => {
+    setName(value);
+    if (!slugTouched) setSlug(nameToSlug(value));
+  };
+
+  // slug 수동 편집 플래그 — onChange 한 곳에서만 토글되도록 핸들러로 추출.
+  const handleSlugChange = (value: string) => {
+    setSlug(value);
+    setSlugTouched(true);
+  };
 
   const slugValid = SLUG_RE.test(slug);
   const canSubmit = name.trim().length > 0 && slugValid && !isPending;
@@ -83,7 +94,7 @@ export function CreateSystemModal({ open, onOpenChange, creatorId }: CreateSyste
   const preview = renderSystemVisual(palette);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[420px] w-[calc(100vw-2rem)] rounded-2xl sm:rounded-3xl p-0 gap-0 overflow-hidden border-border/50 shadow-glow">
         <DialogHeader className="px-5 sm:px-6 pt-5 sm:pt-6 pb-3 text-center">
           <DialogTitle className="text-lg sm:text-xl font-semibold">새 항성계 만들기</DialogTitle>
@@ -103,7 +114,7 @@ export function CreateSystemModal({ open, onOpenChange, creatorId }: CreateSyste
 
           <div className="space-y-1.5">
             <label className="text-xs text-muted-foreground">이름 *</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 심야 대화" maxLength={30} />
+            <Input value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder="예: 심야 대화" maxLength={30} />
           </div>
 
           <div className="space-y-1.5">
@@ -112,7 +123,7 @@ export function CreateSystemModal({ open, onOpenChange, creatorId }: CreateSyste
             </label>
             <Input
               value={slug}
-              onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); }}
+              onChange={(e) => handleSlugChange(e.target.value)}
               placeholder="kebab-case"
               className={!slugValid && slug ? 'border-destructive' : ''}
             />

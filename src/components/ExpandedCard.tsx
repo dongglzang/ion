@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { imageSrcSet, sizesAttr, transformUrl } from '@/lib/imageUrl';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Post } from '@/types';
 import { OverlayRenderer } from '@/components/OverlayRenderer';
@@ -77,19 +78,25 @@ export function ExpandedCard({
             {post.media ? (
               <>
                 {post.mediaType === 'video' ? (
-                  <video
-                    src={post.media}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    autoPlay
-                    loop
-                    playsInline
-                    controls
-                  />
+                <video
+                  src={post.media}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  controls
+                  preload="metadata"
+                />
                 ) : (
                   <img
-                    src={post.media}
+                    src={transformUrl(post.media, 640)}
+                    srcSet={imageSrcSet(post.media, { widths: [320, 640, 960, 1280] })}
+                    sizes={sizesAttr(640)}
                     alt=""
                     className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                     draggable={false}
                   />
                 )}
